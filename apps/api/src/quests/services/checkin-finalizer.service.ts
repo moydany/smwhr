@@ -1,6 +1,7 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import { AuditService } from '../../audit/audit.service';
+import { NotificationService } from '../../notifications/notification.service';
 import { PrismaService } from '../../prisma/prisma.service';
 import { ReconciliationService } from './reconciliation.service';
 import { VerificationService } from './verification.service';
@@ -14,6 +15,7 @@ export class CheckinFinalizerService {
     private readonly reconciler: ReconciliationService,
     private readonly verifier: VerificationService,
     private readonly audit: AuditService,
+    private readonly notify: NotificationService,
   ) {}
 
   /**
@@ -104,6 +106,7 @@ export class CheckinFinalizerService {
     let badgeId: string | null = null;
     if (score.isVerified) {
       badgeId = await this.issueBadge(userId, event.id, event.badgeTemplateId, score.total, photo?.id ?? null);
+      await this.notify.notifyBadgeIssued(userId, badgeId);
     }
 
     return { checkin, scoreBreakdown: score, badgeId };
