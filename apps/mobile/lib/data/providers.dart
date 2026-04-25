@@ -6,6 +6,13 @@ import 'mock/mock_badges_repository.dart';
 import 'mock/mock_events_repository.dart';
 import 'mock/mock_quests_repository.dart';
 import 'mock/mock_users_repository.dart';
+import 'remote/api_client.dart';
+import 'remote/auth_interceptor.dart';
+import 'remote/real_auth_repository.dart';
+import 'remote/real_badges_repository.dart';
+import 'remote/real_events_repository.dart';
+import 'remote/real_quests_repository.dart';
+import 'remote/real_users_repository.dart';
 import 'repositories/auth_repository.dart';
 import 'repositories/badges_repository.dart';
 import 'repositories/events_repository.dart';
@@ -17,6 +24,8 @@ import 'repositories/users_repository.dart';
 /// provider so tests can override it without rebuilding the app.
 final useMocksProvider = Provider<bool>((_) => Env.useMocks);
 
+// ── Mock-mode bootstrap ────────────────────────────────────────────────
+
 /// `MockAuthRepository` is async-constructed (opens a Hive box). The
 /// FutureProvider blocks the rest of the dependency graph until it's ready;
 /// `main.dart` awaits it on cold start so the splash never sees a
@@ -26,8 +35,29 @@ final mockAuthRepositoryProvider =
   return MockAuthRepository.create();
 });
 
-/// Public `AuthRepository` provider. Reads the future-resolved mock impl;
-/// throws if accessed before `mockAuthRepositoryProvider` settles.
+// ── Real-mode bootstrap ────────────────────────────────────────────────
+
+/// AuthTokenSource adapter for the real Dio interceptor. In Phase 2 this
+/// reads from the same Hive `mock_auth` box (renamed to `auth_session`)
+/// or a Supabase session bridge — until then it always returns null so
+/// the interceptor short-circuits.
+class _NullAuthTokenSource implements AuthTokenSource {
+  const _NullAuthTokenSource();
+  @override
+  Future<String?> readAccessToken() async => null;
+  @override
+  Future<String?> tryRefresh() async => null;
+}
+
+final apiClientProvider = Provider<ApiClient>((ref) {
+  return ApiClient.create(tokens: const _NullAuthTokenSource());
+});
+
+// ── Public providers ───────────────────────────────────────────────────
+
+/// Public `AuthRepository` provider. Switches between Mock + Real on the
+/// `useMocksProvider` flag. Mock impl is async-resolved so accessing this
+/// before `mockAuthRepositoryProvider` settles raises a clear error.
 final authRepositoryProvider = Provider<AuthRepository>((ref) {
   if (ref.read(useMocksProvider)) {
     final asyncMock = ref.watch(mockAuthRepositoryProvider);
@@ -39,7 +69,7 @@ final authRepositoryProvider = Provider<AuthRepository>((ref) {
       ),
     );
   }
-  throw UnimplementedError('Real AuthRepository lands in Phase 2.');
+  return RealAuthRepository(ref.watch(apiClientProvider));
 });
 
 final usersRepositoryProvider = Provider<UsersRepository>((ref) {
@@ -47,7 +77,7 @@ final usersRepositoryProvider = Provider<UsersRepository>((ref) {
     final auth = ref.watch(authRepositoryProvider) as MockAuthRepository;
     return MockUsersRepository(auth);
   }
-  throw UnimplementedError('Real UsersRepository lands in Phase 2.');
+  return RealUsersRepository(ref.watch(apiClientProvider));
 });
 
 final eventsRepositoryProvider = Provider<EventsRepository>((ref) {
@@ -57,7 +87,7 @@ final eventsRepositoryProvider = Provider<EventsRepository>((ref) {
     ref.onDispose(repo.dispose);
     return repo;
   }
-  throw UnimplementedError('Real EventsRepository lands in Phase 2.');
+  return RealEventsRepository(ref.watch(apiClientProvider));
 });
 
 final questsRepositoryProvider = Provider<QuestsRepository>((ref) {
@@ -66,7 +96,7 @@ final questsRepositoryProvider = Provider<QuestsRepository>((ref) {
     ref.onDispose(repo.dispose);
     return repo;
   }
-  throw UnimplementedError('Real QuestsRepository lands in Phase 2.');
+  return RealQuestsRepository(ref.watch(apiClientProvider));
 });
 
 final badgesRepositoryProvider = Provider<BadgesRepository>((ref) {
@@ -74,7 +104,7 @@ final badgesRepositoryProvider = Provider<BadgesRepository>((ref) {
     final auth = ref.watch(authRepositoryProvider) as MockAuthRepository;
     return MockBadgesRepository(auth);
   }
-  throw UnimplementedError('Real BadgesRepository lands in Phase 2.');
+  return RealBadgesRepository(ref.watch(apiClientProvider));
 });
 
 /// Convenience: emits `AuthState` for the rest of the app (splash redirect,
