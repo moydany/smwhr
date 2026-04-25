@@ -74,6 +74,7 @@ model Event {
 
   category          String
   subcategory       String?
+  description       String?
 
   startsAt          DateTime
   endsAt            DateTime
