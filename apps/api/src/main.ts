@@ -10,6 +10,8 @@ const ALLOWED_ORIGIN_PATTERNS: RegExp[] = [
   /^https:\/\/(.*\.)?smwhr\.dev$/,
   /^https:\/\/(.*\.)?smwhr\.quest$/,
   /^https:\/\/.*\.vercel\.app$/,
+  /^https:\/\/.*\.ngrok-free\.app$/,
+  /^https:\/\/.*\.ngrok\.app$/,
   /^http:\/\/localhost(:\d+)?$/,
   /^http:\/\/127\.0\.0\.1(:\d+)?$/,
 ];
