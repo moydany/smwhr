@@ -2,6 +2,7 @@ import { HttpStatus, Injectable, Logger } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import type { User } from '@prisma/client';
 import { randomUUID } from 'node:crypto';
+import { AuditService } from '../audit/audit.service';
 import { ApiException } from '../common/exceptions/api.exception';
 import { EventsService } from '../events/events.service';
 import { PrismaService } from '../prisma/prisma.service';
@@ -20,6 +21,7 @@ export class QuestsService {
     private readonly events: EventsService,
     private readonly storage: StorageService,
     private readonly geo: GeoService,
+    private readonly audit: AuditService,
   ) {}
 
   async getStatus(user: User, eventId: string) {
@@ -99,6 +101,18 @@ export class QuestsService {
 
     const inside = await this.geo.applyGeofenceTo(user.id, event.id);
 
+    await this.audit.record({
+      type: 'QUEST_SYNC',
+      userId: user.id,
+      eventId: event.id,
+      metadata: {
+        locusInserted,
+        geolocatorInserted,
+        insideLocus: inside.insideLocus,
+        insideGeolocator: inside.insideGeolocator,
+      },
+    });
+
     return {
       eventId: event.id,
       receivedAt: new Date(),
@@ -129,6 +143,12 @@ export class QuestsService {
         integrityVerdict: 'pending_verification',
         integrityCheckedAt: new Date(dto.verifiedAt),
       },
+    });
+    await this.audit.record({
+      type: 'INTEGRITY_ATTESTED',
+      userId: user.id,
+      eventId: event.id,
+      metadata: { platform: dto.platform, verdict: checkin.integrityVerdict },
     });
     return { verdict: checkin.integrityVerdict, verifiedAt: checkin.integrityCheckedAt };
   }
@@ -193,6 +213,13 @@ export class QuestsService {
         photoId: photo.id,
       },
       update: { photoId: photo.id },
+    });
+
+    await this.audit.record({
+      type: 'PHOTO_UPLOADED',
+      userId: user.id,
+      eventId: event.id,
+      metadata: { photoId: photo.id, isExifValid, isWithinTimeWindow, isInsideGeofence },
     });
 
     return {

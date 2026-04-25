@@ -1,4 +1,5 @@
 import { HttpStatus, Injectable, Logger } from '@nestjs/common';
+import { AuditService } from '../audit/audit.service';
 import { ApiException } from '../common/exceptions/api.exception';
 import { SupabaseService } from './supabase.service';
 
@@ -14,7 +15,10 @@ export interface AuthSession {
 export class AuthService {
   private readonly logger = new Logger(AuthService.name);
 
-  constructor(private readonly supabase: SupabaseService) {}
+  constructor(
+    private readonly supabase: SupabaseService,
+    private readonly audit: AuditService,
+  ) {}
 
   async requestEmailMagicLink(email: string): Promise<{ sent: true }> {
     const { error } = await this.supabase.admin.auth.signInWithOtp({
@@ -25,6 +29,7 @@ export class AuthService {
       this.logger.warn(`signInWithOtp failed: ${error.message}`);
       throw new ApiException(HttpStatus.BAD_REQUEST, 'AUTH_OTP_FAILED', error.message);
     }
+    await this.audit.record({ type: 'AUTH_OTP_REQUESTED', metadata: { email } });
     return { sent: true };
   }
 
@@ -41,6 +46,10 @@ export class AuthService {
         error?.message ?? 'Invalid OTP',
       );
     }
+    await this.audit.record({
+      type: 'AUTH_OTP_VERIFIED',
+      metadata: { email, supabaseUserId: data.user.id },
+    });
     return this.toSession(data.session, data.user);
   }
 

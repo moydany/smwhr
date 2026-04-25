@@ -1,6 +1,7 @@
 import { HttpStatus, Injectable } from '@nestjs/common';
 import type { User } from '@prisma/client';
 import { Prisma } from '@prisma/client';
+import { AuditService } from '../audit/audit.service';
 import { ApiException } from '../common/exceptions/api.exception';
 import { PrismaService } from '../prisma/prisma.service';
 import { EventsService } from './events.service';
@@ -10,6 +11,7 @@ export class IntentsService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly events: EventsService,
+    private readonly audit: AuditService,
   ) {}
 
   async getMine(user: User, eventId: string) {
@@ -41,6 +43,7 @@ export class IntentsService {
         });
         return created;
       });
+      await this.audit.record({ type: 'INTENT_SET', userId: user.id, eventId: event.id });
       return { intent, eventId: event.id };
     } catch (err) {
       if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === 'P2002') {
@@ -62,6 +65,7 @@ export class IntentsService {
           data: { intentCount: { decrement: 1 } },
         });
       });
+      await this.audit.record({ type: 'INTENT_CLEARED', userId: user.id, eventId: event.id });
     } catch (err) {
       if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === 'P2025') {
         return;

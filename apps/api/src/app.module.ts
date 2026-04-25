@@ -5,6 +5,7 @@ import { ScheduleModule } from '@nestjs/schedule';
 import { ThrottlerGuard, ThrottlerModule } from '@nestjs/throttler';
 import configuration from './config/configuration';
 import { validationSchema } from './config/validation.schema';
+import { AuditModule } from './audit/audit.module';
 import { AuthModule } from './auth/auth.module';
 import { BadgesModule } from './badges/badges.module';
 import { EventsModule } from './events/events.module';
@@ -28,6 +29,7 @@ import { WaitlistModule } from './waitlist/waitlist.module';
     ]),
     ScheduleModule.forRoot(),
     PrismaModule,
+    AuditModule,
     AuthModule,
     UsersModule,
     EventsModule,

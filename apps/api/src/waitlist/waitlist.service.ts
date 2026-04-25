@@ -1,5 +1,6 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
+import { AuditService } from '../audit/audit.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { WaitlistSignupDto } from './dto/waitlist-signup.dto';
 
@@ -7,7 +8,10 @@ import { WaitlistSignupDto } from './dto/waitlist-signup.dto';
 export class WaitlistService {
   private readonly logger = new Logger(WaitlistService.name);
 
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly audit: AuditService,
+  ) {}
 
   async signup(dto: WaitlistSignupDto) {
     try {
@@ -18,6 +22,10 @@ export class WaitlistService {
           referrer: dto.referrer ?? null,
           interests: dto.interests ?? [],
         },
+      });
+      await this.audit.record({
+        type: 'WAITLIST_SIGNUP',
+        metadata: { source: dto.source ?? 'landing', interestsCount: (dto.interests ?? []).length },
       });
       return { success: true, message: "You're on the list — we'll be in touch." };
     } catch (err) {

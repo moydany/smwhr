@@ -1,5 +1,6 @@
 import { HttpStatus, Injectable } from '@nestjs/common';
 import type { User } from '@prisma/client';
+import { AuditService } from '../audit/audit.service';
 import { ApiException } from '../common/exceptions/api.exception';
 import { PrismaService } from '../prisma/prisma.service';
 import { OnboardingDto } from './dto/onboarding.dto';
@@ -8,7 +9,10 @@ import { normalizeHandle, validateHandle } from './utils/handle.validator';
 
 @Injectable()
 export class UsersService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly audit: AuditService,
+  ) {}
 
   async getMe(user: User): Promise<User> {
     return user;
@@ -52,7 +56,7 @@ export class UsersService {
       throw new ApiException(HttpStatus.CONFLICT, 'HANDLE_TAKEN', 'Handle already taken');
     }
 
-    return this.prisma.user.update({
+    const updated = await this.prisma.user.update({
       where: { id: user.id },
       data: {
         handle,
@@ -66,6 +70,12 @@ export class UsersService {
         onboardingCompletedAt: new Date(),
       },
     });
+    await this.audit.record({
+      type: 'ONBOARDING_COMPLETED',
+      userId: updated.id,
+      metadata: { handle: updated.handle, interestsCount: updated.interests.length },
+    });
+    return updated;
   }
 
   async updateMe(user: User, dto: UpdateMeDto): Promise<User> {

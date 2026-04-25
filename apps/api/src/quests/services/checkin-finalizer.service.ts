@@ -1,5 +1,6 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
+import { AuditService } from '../../audit/audit.service';
 import { PrismaService } from '../../prisma/prisma.service';
 import { ReconciliationService } from './reconciliation.service';
 import { VerificationService } from './verification.service';
@@ -12,6 +13,7 @@ export class CheckinFinalizerService {
     private readonly prisma: PrismaService,
     private readonly reconciler: ReconciliationService,
     private readonly verifier: VerificationService,
+    private readonly audit: AuditService,
   ) {}
 
   /**
@@ -87,6 +89,18 @@ export class CheckinFinalizerService {
       },
     });
 
+    await this.audit.record({
+      type: 'CHECKIN_FINALIZED',
+      userId,
+      eventId,
+      metadata: {
+        primarySource: r.primarySource,
+        dwellMinutes: r.dwellMinutes,
+        verificationScore: score.total,
+        isVerified: score.isVerified,
+      },
+    });
+
     let badgeId: string | null = null;
     if (score.isVerified) {
       badgeId = await this.issueBadge(userId, event.id, event.badgeTemplateId, score.total, photo?.id ?? null);
@@ -151,6 +165,12 @@ export class CheckinFinalizerService {
     });
 
     this.logger.log(`badge issued: user=${userId} event=${eventId} serial=${badge.serialNumber}`);
+    await this.audit.record({
+      type: 'BADGE_ISSUED',
+      userId,
+      eventId,
+      metadata: { badgeId: badge.id, serialNumber: badge.serialNumber, score: verificationScore },
+    });
     return badge.id;
   }
 

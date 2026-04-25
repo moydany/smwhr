@@ -7,6 +7,7 @@ import {
 } from '@nestjs/common';
 import { Reflector } from '@nestjs/core';
 import { Request } from 'express';
+import { AuditService } from '../../audit/audit.service';
 import { PrismaService } from '../../prisma/prisma.service';
 import { SupabaseService } from '../supabase.service';
 import { IS_PUBLIC_KEY } from '../decorators/public.decorator';
@@ -19,6 +20,7 @@ export class JwtAuthGuard implements CanActivate {
     private readonly reflector: Reflector,
     private readonly supabase: SupabaseService,
     private readonly prisma: PrismaService,
+    private readonly audit: AuditService,
   ) {}
 
   async canActivate(ctx: ExecutionContext): Promise<boolean> {
@@ -55,6 +57,11 @@ export class JwtAuthGuard implements CanActivate {
           authProvider: sb.app_metadata?.provider ?? 'email',
           authProviderId: sb.user_metadata?.provider_id ?? null,
         },
+      });
+      await this.audit.record({
+        type: 'USER_AUTO_CREATED',
+        userId: user.id,
+        metadata: { provider: user.authProvider, supabaseUserId: sb.id },
       });
     }
 
