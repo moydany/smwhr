@@ -54,6 +54,7 @@ dependencies:
 
   # Haptics + share + image gen
   share_plus: ^10.0.2
+  path_provider: ^2.1.4
 
   cupertino_icons: ^1.0.8
 
