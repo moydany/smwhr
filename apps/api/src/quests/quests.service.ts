@@ -8,6 +8,7 @@ import { PrismaService } from '../prisma/prisma.service';
 import { IntegrityDto } from './dto/integrity.dto';
 import { SyncTrackingDto } from './dto/sync-tracking.dto';
 import { UploadPhotoMetadataDto } from './dto/upload-photo.dto';
+import { GeoService } from './services/geo.service';
 import { StorageService } from './storage.service';
 
 @Injectable()
@@ -18,6 +19,7 @@ export class QuestsService {
     private readonly prisma: PrismaService,
     private readonly events: EventsService,
     private readonly storage: StorageService,
+    private readonly geo: GeoService,
   ) {}
 
   async getStatus(user: User, eventId: string) {
@@ -95,11 +97,14 @@ export class QuestsService {
       this.prisma.geolocatorPing.createMany({ data: geolocatorRows, skipDuplicates: true }),
     ]);
 
+    const inside = await this.geo.applyGeofenceTo(user.id, event.id);
+
     return {
       eventId: event.id,
       receivedAt: new Date(),
       locusEventsInserted: locusInserted,
       geolocatorPingsInserted: geolocatorInserted,
+      insideGeofence: inside,
     };
   }
 
@@ -158,6 +163,10 @@ export class QuestsService {
       exifTs.getTime() >= event.startsAt.getTime() - 30 * 60 * 1000 &&
       exifTs.getTime() <= event.endsAt.getTime() + 30 * 60 * 1000;
     const isExifValid = exifTs !== null && metadata.exifLatitude !== undefined && metadata.exifLongitude !== undefined;
+    const isInsideGeofence =
+      isExifValid && metadata.exifLatitude !== undefined && metadata.exifLongitude !== undefined
+        ? await this.geo.pointIsInside(event.id, metadata.exifLatitude, metadata.exifLongitude)
+        : false;
 
     const photo = await this.prisma.photo.create({
       data: {
@@ -170,6 +179,7 @@ export class QuestsService {
         exifRaw: (metadata.exifRaw ?? Prisma.JsonNull) as Prisma.InputJsonValue,
         isExifValid,
         isWithinTimeWindow,
+        isInsideGeofence,
         processingStatus: 'pending',
       },
     });
@@ -190,6 +200,7 @@ export class QuestsService {
       storagePath: photo.storagePath,
       isExifValid,
       isWithinTimeWindow,
+      isInsideGeofence,
       uploadedAt: photo.createdAt,
     };
   }

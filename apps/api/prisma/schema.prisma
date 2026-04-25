@@ -80,9 +80,8 @@ model Event {
   endsAt            DateTime
   dwellMinimumMin   Int       @default(60)
 
-  // PostGIS: estos campos requieren raw SQL para insertar/query
-  // geofence_polygon geography(Polygon, 4326)
-  // geofence_center  geography(Point, 4326)
+  geofencePolygon   Unsupported("geography(Polygon, 4326)")? @map("geofence_polygon")
+  geofenceCenter    Unsupported("geography(Point, 4326)")?  @map("geofence_center")
   geofenceRadiusM   Int?
 
   externalSource    String?

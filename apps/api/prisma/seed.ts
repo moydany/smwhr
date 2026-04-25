@@ -19,6 +19,50 @@ import { PrismaClient } from '@prisma/client';
 
 const prisma = new PrismaClient();
 
+interface VenueLoc {
+  lat: number;
+  lng: number;
+  delta?: number;
+}
+
+const VENUES: Record<string, VenueLoc> = {
+  gnpSeguros: { lat: 19.4032, lng: -99.1755 },
+  estadioAzteca: { lat: 19.3029, lng: -99.1505 },
+  foroSol: { lat: 19.4044, lng: -99.0931 },
+  estadioBBVA: { lat: 25.6692, lng: -100.2447 },
+  laBombonera: { lat: -34.6356, lng: -58.3651 },
+  autodromo: { lat: 19.4042, lng: -99.0907, delta: 0.005 },
+  parqueBicentenario: { lat: 19.5043, lng: -99.1864, delta: 0.005 },
+  trasloma: { lat: 20.6750, lng: -103.4080 },
+  iztaccihuatl: { lat: 19.1789, lng: -98.6418, delta: 0.02 },
+  tepozteco: { lat: 18.9885, lng: -99.1014 },
+  guanajuatoCentro: { lat: 21.0190, lng: -101.2574, delta: 0.01 },
+  auditorioTelmex: { lat: 20.7237, lng: -103.4007 },
+};
+
+function buildPolygonWkt(loc: VenueLoc): string {
+  const d = loc.delta ?? 0.0015;
+  const ring = [
+    [loc.lng - d, loc.lat - d],
+    [loc.lng + d, loc.lat - d],
+    [loc.lng + d, loc.lat + d],
+    [loc.lng - d, loc.lat + d],
+    [loc.lng - d, loc.lat - d],
+  ];
+  return `POLYGON((${ring.map(([x, y]) => `${x} ${y}`).join(', ')}))`;
+}
+
+async function setEventGeofence(eventId: string, loc: VenueLoc) {
+  const polygonWkt = buildPolygonWkt(loc);
+  const centerWkt = `POINT(${loc.lng} ${loc.lat})`;
+  await prisma.$executeRawUnsafe(`
+    UPDATE "events"
+    SET geofence_polygon = ST_GeogFromText('${polygonWkt}'),
+        geofence_center  = ST_GeogFromText('${centerWkt}')
+    WHERE id = '${eventId}'
+  `);
+}
+
 const TEMPLATE_IDS = {
   music: '00000000-0000-0000-0000-000000000001',
   sports: '00000000-0000-0000-0000-000000000002',
@@ -128,28 +172,29 @@ interface FutureEvent {
   isFeatured?: boolean;
   intentCount?: number;
   totalCapacity?: number;
+  venue: VenueLoc;
 }
 
 async function seedFutureEvents() {
   const events: FutureEvent[] = [
-    { slug: 'bts-mexico-2026-n1', title: 'BTS World Tour · Noche 1', artist: 'BTS', venueName: 'Estadio GNP Seguros', city: 'Ciudad de México', category: 'music', startsAt: new Date('2026-05-07T20:30:00-06:00'), endsAt: new Date('2026-05-07T23:30:00-06:00'), dwellMin: 45, isFeatured: true, intentCount: 8420, description: 'La primera de tres noches que cambian todo. ARMY mexicano por fin recibe a los siete.', heroColor: '#FF2D95' },
-    { slug: 'bts-mexico-2026-n2', title: 'BTS World Tour · Noche 2', artist: 'BTS', venueName: 'Estadio GNP Seguros', city: 'Ciudad de México', category: 'music', startsAt: new Date('2026-05-09T20:30:00-06:00'), endsAt: new Date('2026-05-09T23:30:00-06:00'), dwellMin: 45, isFeatured: true, intentCount: 7910, description: 'Segunda noche. La que definitivamente vas a recordar.', heroColor: '#FF2D95' },
-    { slug: 'bts-mexico-2026-n3', title: 'BTS World Tour · Noche 3', artist: 'BTS', venueName: 'Estadio GNP Seguros', city: 'Ciudad de México', category: 'music', startsAt: new Date('2026-05-10T20:30:00-06:00'), endsAt: new Date('2026-05-10T23:30:00-06:00'), dwellMin: 45, isFeatured: true, intentCount: 8120, description: 'La última. Todo lo que se lloró se llora. Encore.', heroColor: '#FF2D95' },
-    { slug: 'bad-bunny-cdmx-2026', title: 'Bad Bunny · Most Wanted Tour', artist: 'Bad Bunny', venueName: 'Estadio Azteca', city: 'Ciudad de México', category: 'music', startsAt: new Date('2026-06-14T21:00:00-06:00'), endsAt: new Date('2026-06-15T00:00:00-06:00'), dwellMin: 60, intentCount: 12300, description: 'Benito vuelve a México. Cuatro fechas, una sola noche tuya.', heroColor: '#FF2D95' },
-    { slug: 'rosalia-foro-sol-2026', title: 'Rosalía · Motomami Live', artist: 'Rosalía', venueName: 'Foro Sol', city: 'Ciudad de México', category: 'music', startsAt: new Date('2026-07-22T21:00:00-06:00'), endsAt: new Date('2026-07-23T00:00:00-06:00'), dwellMin: 60, intentCount: 4210, description: 'Motomami, la versión que solo la ves vivo.', heroColor: '#FF2D95' },
-    { slug: 'mana-monterrey-2026', title: 'Maná · Vivir Sin Aire Tour', artist: 'Maná', venueName: 'Estadio BBVA', city: 'Monterrey', category: 'music', startsAt: new Date('2026-05-30T21:00:00-06:00'), endsAt: new Date('2026-05-30T23:30:00-06:00'), dwellMin: 60, intentCount: 2800, description: 'Clásico mexicano en estadio nuevo.', heroColor: '#FF2D95' },
-    { slug: 'clasico-nacional-2026-jun', title: 'Clásico Nacional · América vs Chivas', venueName: 'Estadio Azteca', city: 'Ciudad de México', category: 'sports', startsAt: new Date('2026-06-07T19:00:00-06:00'), endsAt: new Date('2026-06-07T21:00:00-06:00'), dwellMin: 60, intentCount: 5640, description: 'El más visto de la liga. La que vas a contar.', heroColor: '#2DFF95' },
-    { slug: 'rayados-tigres-clasico-regio-2026', title: 'Clásico Regio · Rayados vs Tigres', venueName: 'Estadio BBVA', city: 'Monterrey', category: 'sports', startsAt: new Date('2026-08-16T19:00:00-06:00'), endsAt: new Date('2026-08-16T21:00:00-06:00'), dwellMin: 60, intentCount: 3120, description: 'Norte contra norte. Solo norteños lo entienden.', heroColor: '#2DFF95' },
-    { slug: 'boca-river-bombonera-2026', title: 'Superclásico · Boca vs River', venueName: 'La Bombonera', city: 'Buenos Aires', country: 'AR', category: 'sports', startsAt: new Date('2026-09-27T17:00:00-03:00'), endsAt: new Date('2026-09-27T19:00:00-03:00'), dwellMin: 60, intentCount: 8800, description: 'No hay otro como éste. Punto.', heroColor: '#2DFF95' },
-    { slug: 'corona-capital-2026', title: 'Corona Capital 2026', venueName: 'Autódromo Hermanos Rodríguez', city: 'Ciudad de México', category: 'festivals', startsAt: new Date('2026-11-14T13:00:00-06:00'), endsAt: new Date('2026-11-16T23:30:00-06:00'), dwellMin: 90, intentCount: 11200, description: 'Tres días. Diez escenarios. Una multitud que solo se reconoce en noviembre.', heroColor: '#FF9D2D' },
-    { slug: 'vive-latino-2026', title: 'Vive Latino 2026', venueName: 'Foro Sol', city: 'Ciudad de México', category: 'festivals', startsAt: new Date('2026-03-14T13:00:00-06:00'), endsAt: new Date('2026-03-15T23:30:00-06:00'), dwellMin: 90, intentCount: 7430, description: 'El gran festival latinoamericano.', heroColor: '#FF9D2D' },
-    { slug: 'coordenada-2026', title: 'Festival Coordenada', venueName: 'Trasloma', city: 'Guadalajara', category: 'festivals', startsAt: new Date('2026-10-24T14:00:00-06:00'), endsAt: new Date('2026-10-25T23:30:00-06:00'), dwellMin: 90, intentCount: 2310, description: 'El festival que está convirtiendo Guadalajara en capital.', heroColor: '#FF9D2D' },
-    { slug: 'iztaccihuatl-luna-llena-2026-jul', title: 'Iztaccíhuatl · Luna llena', venueName: 'Parque Nacional Izta-Popo', city: 'Amecameca', category: 'outdoor', startsAt: new Date('2026-07-19T04:00:00-06:00'), endsAt: new Date('2026-07-19T16:00:00-06:00'), dwellMin: 120, intentCount: 180, description: 'Salida a las 4 am. Cumbre en luna llena. No es turismo.', heroColor: '#2DC8FF' },
-    { slug: 'tepozteco-amanecer-2026-may', title: 'Tepozteco al amanecer', venueName: 'Cerro del Tepozteco', city: 'Tepoztlán', category: 'outdoor', startsAt: new Date('2026-05-25T05:30:00-06:00'), endsAt: new Date('2026-05-25T09:30:00-06:00'), dwellMin: 60, intentCount: 92, description: 'Salida pre-amanecer en domingo. Llegamos arriba con sol.', heroColor: '#2DC8FF' },
-    { slug: 'cervantino-2026', title: 'Festival Cervantino', venueName: 'Centro Histórico', city: 'Guanajuato', category: 'culture', startsAt: new Date('2026-10-09T18:00:00-06:00'), endsAt: new Date('2026-10-25T23:00:00-06:00'), dwellMin: 60, intentCount: 1740, description: 'El festival cultural más grande de Latinoamérica.', heroColor: '#9D2DFF' },
+    { slug: 'bts-mexico-2026-n1', title: 'BTS World Tour · Noche 1', artist: 'BTS', venueName: 'Estadio GNP Seguros', city: 'Ciudad de México', category: 'music', startsAt: new Date('2026-05-07T20:30:00-06:00'), endsAt: new Date('2026-05-07T23:30:00-06:00'), dwellMin: 45, isFeatured: true, intentCount: 8420, description: 'La primera de tres noches que cambian todo. ARMY mexicano por fin recibe a los siete.', heroColor: '#FF2D95', venue: VENUES.gnpSeguros },
+    { slug: 'bts-mexico-2026-n2', title: 'BTS World Tour · Noche 2', artist: 'BTS', venueName: 'Estadio GNP Seguros', city: 'Ciudad de México', category: 'music', startsAt: new Date('2026-05-09T20:30:00-06:00'), endsAt: new Date('2026-05-09T23:30:00-06:00'), dwellMin: 45, isFeatured: true, intentCount: 7910, description: 'Segunda noche. La que definitivamente vas a recordar.', heroColor: '#FF2D95', venue: VENUES.gnpSeguros },
+    { slug: 'bts-mexico-2026-n3', title: 'BTS World Tour · Noche 3', artist: 'BTS', venueName: 'Estadio GNP Seguros', city: 'Ciudad de México', category: 'music', startsAt: new Date('2026-05-10T20:30:00-06:00'), endsAt: new Date('2026-05-10T23:30:00-06:00'), dwellMin: 45, isFeatured: true, intentCount: 8120, description: 'La última. Todo lo que se lloró se llora. Encore.', heroColor: '#FF2D95', venue: VENUES.gnpSeguros },
+    { slug: 'bad-bunny-cdmx-2026', title: 'Bad Bunny · Most Wanted Tour', artist: 'Bad Bunny', venueName: 'Estadio Azteca', city: 'Ciudad de México', category: 'music', startsAt: new Date('2026-06-14T21:00:00-06:00'), endsAt: new Date('2026-06-15T00:00:00-06:00'), dwellMin: 60, intentCount: 12300, description: 'Benito vuelve a México. Cuatro fechas, una sola noche tuya.', heroColor: '#FF2D95', venue: VENUES.estadioAzteca },
+    { slug: 'rosalia-foro-sol-2026', title: 'Rosalía · Motomami Live', artist: 'Rosalía', venueName: 'Foro Sol', city: 'Ciudad de México', category: 'music', startsAt: new Date('2026-07-22T21:00:00-06:00'), endsAt: new Date('2026-07-23T00:00:00-06:00'), dwellMin: 60, intentCount: 4210, description: 'Motomami, la versión que solo la ves vivo.', heroColor: '#FF2D95', venue: VENUES.foroSol },
+    { slug: 'mana-monterrey-2026', title: 'Maná · Vivir Sin Aire Tour', artist: 'Maná', venueName: 'Estadio BBVA', city: 'Monterrey', category: 'music', startsAt: new Date('2026-05-30T21:00:00-06:00'), endsAt: new Date('2026-05-30T23:30:00-06:00'), dwellMin: 60, intentCount: 2800, description: 'Clásico mexicano en estadio nuevo.', heroColor: '#FF2D95', venue: VENUES.estadioBBVA },
+    { slug: 'clasico-nacional-2026-jun', title: 'Clásico Nacional · América vs Chivas', venueName: 'Estadio Azteca', city: 'Ciudad de México', category: 'sports', startsAt: new Date('2026-06-07T19:00:00-06:00'), endsAt: new Date('2026-06-07T21:00:00-06:00'), dwellMin: 60, intentCount: 5640, description: 'El más visto de la liga. La que vas a contar.', heroColor: '#2DFF95', venue: VENUES.estadioAzteca },
+    { slug: 'rayados-tigres-clasico-regio-2026', title: 'Clásico Regio · Rayados vs Tigres', venueName: 'Estadio BBVA', city: 'Monterrey', category: 'sports', startsAt: new Date('2026-08-16T19:00:00-06:00'), endsAt: new Date('2026-08-16T21:00:00-06:00'), dwellMin: 60, intentCount: 3120, description: 'Norte contra norte. Solo norteños lo entienden.', heroColor: '#2DFF95', venue: VENUES.estadioBBVA },
+    { slug: 'boca-river-bombonera-2026', title: 'Superclásico · Boca vs River', venueName: 'La Bombonera', city: 'Buenos Aires', country: 'AR', category: 'sports', startsAt: new Date('2026-09-27T17:00:00-03:00'), endsAt: new Date('2026-09-27T19:00:00-03:00'), dwellMin: 60, intentCount: 8800, description: 'No hay otro como éste. Punto.', heroColor: '#2DFF95', venue: VENUES.laBombonera },
+    { slug: 'corona-capital-2026', title: 'Corona Capital 2026', venueName: 'Autódromo Hermanos Rodríguez', city: 'Ciudad de México', category: 'festivals', startsAt: new Date('2026-11-14T13:00:00-06:00'), endsAt: new Date('2026-11-16T23:30:00-06:00'), dwellMin: 90, intentCount: 11200, description: 'Tres días. Diez escenarios. Una multitud que solo se reconoce en noviembre.', heroColor: '#FF9D2D', venue: VENUES.autodromo },
+    { slug: 'vive-latino-2026', title: 'Vive Latino 2026', venueName: 'Foro Sol', city: 'Ciudad de México', category: 'festivals', startsAt: new Date('2026-03-14T13:00:00-06:00'), endsAt: new Date('2026-03-15T23:30:00-06:00'), dwellMin: 90, intentCount: 7430, description: 'El gran festival latinoamericano.', heroColor: '#FF9D2D', venue: VENUES.foroSol },
+    { slug: 'coordenada-2026', title: 'Festival Coordenada', venueName: 'Trasloma', city: 'Guadalajara', category: 'festivals', startsAt: new Date('2026-10-24T14:00:00-06:00'), endsAt: new Date('2026-10-25T23:30:00-06:00'), dwellMin: 90, intentCount: 2310, description: 'El festival que está convirtiendo Guadalajara en capital.', heroColor: '#FF9D2D', venue: VENUES.trasloma },
+    { slug: 'iztaccihuatl-luna-llena-2026-jul', title: 'Iztaccíhuatl · Luna llena', venueName: 'Parque Nacional Izta-Popo', city: 'Amecameca', category: 'outdoor', startsAt: new Date('2026-07-19T04:00:00-06:00'), endsAt: new Date('2026-07-19T16:00:00-06:00'), dwellMin: 120, intentCount: 180, description: 'Salida a las 4 am. Cumbre en luna llena. No es turismo.', heroColor: '#2DC8FF', venue: VENUES.iztaccihuatl },
+    { slug: 'tepozteco-amanecer-2026-may', title: 'Tepozteco al amanecer', venueName: 'Cerro del Tepozteco', city: 'Tepoztlán', category: 'outdoor', startsAt: new Date('2026-05-25T05:30:00-06:00'), endsAt: new Date('2026-05-25T09:30:00-06:00'), dwellMin: 60, intentCount: 92, description: 'Salida pre-amanecer en domingo. Llegamos arriba con sol.', heroColor: '#2DC8FF', venue: VENUES.tepozteco },
+    { slug: 'cervantino-2026', title: 'Festival Cervantino', venueName: 'Centro Histórico', city: 'Guanajuato', category: 'culture', startsAt: new Date('2026-10-09T18:00:00-06:00'), endsAt: new Date('2026-10-25T23:00:00-06:00'), dwellMin: 60, intentCount: 1740, description: 'El festival cultural más grande de Latinoamérica.', heroColor: '#9D2DFF', venue: VENUES.guanajuatoCentro },
   ];
   for (const e of events) {
-    await prisma.event.upsert({
+    const event = await prisma.event.upsert({
       where: { slug: e.slug },
       update: {
         title: e.title,
@@ -188,8 +233,9 @@ async function seedFutureEvents() {
         status: 'scheduled',
       },
     });
+    await setEventGeofence(event.id, e.venue);
   }
-  console.log(`✓ ${events.length} future events`);
+  console.log(`✓ ${events.length} future events (with geofence polygons)`);
 }
 
 interface PastEvent {
@@ -201,17 +247,18 @@ interface PastEvent {
   country?: string;
   category: keyof typeof TEMPLATE_IDS;
   startsAt: Date;
+  venue: VenueLoc;
 }
 
 async function seedPastEvents(): Promise<Record<string, string>> {
   const past: PastEvent[] = [
-    { slug: 'past-rosalia-2025', title: 'Rosalía · Motomami', artist: 'Rosalía', venueName: 'Foro Sol', city: 'Ciudad de México', category: 'music', startsAt: new Date('2025-08-14T21:00:00-06:00') },
-    { slug: 'past-corona-2025', title: 'Corona Capital 2025', venueName: 'Autódromo Hermanos Rodríguez', city: 'Ciudad de México', category: 'festivals', startsAt: new Date('2025-11-15T13:00:00-06:00') },
-    { slug: 'past-clasico-2025', title: 'Clásico Nacional · América vs Chivas', venueName: 'Estadio Azteca', city: 'Ciudad de México', category: 'sports', startsAt: new Date('2025-09-21T19:00:00-06:00') },
-    { slug: 'past-iztaccihuatl-2024', title: 'Iztaccíhuatl · Cumbre', venueName: 'Parque Nacional Izta-Popo', city: 'Amecameca', category: 'outdoor', startsAt: new Date('2024-12-28T04:00:00-06:00') },
-    { slug: 'past-cervantino-2024', title: 'Festival Cervantino 2024', venueName: 'Centro Histórico', city: 'Guanajuato', category: 'culture', startsAt: new Date('2024-10-18T19:00:00-06:00') },
-    { slug: 'past-mana-2024', title: 'Maná · Hecho en México', artist: 'Maná', venueName: 'Auditorio Telmex', city: 'Guadalajara', category: 'music', startsAt: new Date('2024-06-08T21:00:00-06:00') },
-    { slug: 'past-vivelatino-2024', title: 'Vive Latino 2024', venueName: 'Foro Sol', city: 'Ciudad de México', category: 'festivals', startsAt: new Date('2024-03-16T13:00:00-06:00') },
+    { slug: 'past-rosalia-2025', title: 'Rosalía · Motomami', artist: 'Rosalía', venueName: 'Foro Sol', city: 'Ciudad de México', category: 'music', startsAt: new Date('2025-08-14T21:00:00-06:00'), venue: VENUES.foroSol },
+    { slug: 'past-corona-2025', title: 'Corona Capital 2025', venueName: 'Autódromo Hermanos Rodríguez', city: 'Ciudad de México', category: 'festivals', startsAt: new Date('2025-11-15T13:00:00-06:00'), venue: VENUES.autodromo },
+    { slug: 'past-clasico-2025', title: 'Clásico Nacional · América vs Chivas', venueName: 'Estadio Azteca', city: 'Ciudad de México', category: 'sports', startsAt: new Date('2025-09-21T19:00:00-06:00'), venue: VENUES.estadioAzteca },
+    { slug: 'past-iztaccihuatl-2024', title: 'Iztaccíhuatl · Cumbre', venueName: 'Parque Nacional Izta-Popo', city: 'Amecameca', category: 'outdoor', startsAt: new Date('2024-12-28T04:00:00-06:00'), venue: VENUES.iztaccihuatl },
+    { slug: 'past-cervantino-2024', title: 'Festival Cervantino 2024', venueName: 'Centro Histórico', city: 'Guanajuato', category: 'culture', startsAt: new Date('2024-10-18T19:00:00-06:00'), venue: VENUES.guanajuatoCentro },
+    { slug: 'past-mana-2024', title: 'Maná · Hecho en México', artist: 'Maná', venueName: 'Auditorio Telmex', city: 'Guadalajara', category: 'music', startsAt: new Date('2024-06-08T21:00:00-06:00'), venue: VENUES.auditorioTelmex },
+    { slug: 'past-vivelatino-2024', title: 'Vive Latino 2024', venueName: 'Foro Sol', city: 'Ciudad de México', category: 'festivals', startsAt: new Date('2024-03-16T13:00:00-06:00'), venue: VENUES.foroSol },
   ];
   const slugToId: Record<string, string> = {};
   for (const e of past) {
@@ -235,8 +282,9 @@ async function seedPastEvents(): Promise<Record<string, string>> {
       },
     });
     slugToId[e.slug] = event.id;
+    await setEventGeofence(event.id, e.venue);
   }
-  console.log(`✓ ${past.length} past events`);
+  console.log(`✓ ${past.length} past events (with geofence polygons)`);
   return slugToId;
 }
 
