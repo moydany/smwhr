@@ -1,6 +1,8 @@
 import { Module } from '@nestjs/common';
 import { ConfigModule } from '@nestjs/config';
+import { APP_GUARD } from '@nestjs/core';
 import { ScheduleModule } from '@nestjs/schedule';
+import { ThrottlerGuard, ThrottlerModule } from '@nestjs/throttler';
 import configuration from './config/configuration';
 import { validationSchema } from './config/validation.schema';
 import { AuthModule } from './auth/auth.module';
@@ -20,6 +22,10 @@ import { WaitlistModule } from './waitlist/waitlist.module';
       validationSchema,
       validationOptions: { abortEarly: false },
     }),
+    ThrottlerModule.forRoot([
+      { name: 'short', ttl: 1_000, limit: 20 },
+      { name: 'long', ttl: 60_000, limit: 300 },
+    ]),
     ScheduleModule.forRoot(),
     PrismaModule,
     AuthModule,
@@ -30,5 +36,6 @@ import { WaitlistModule } from './waitlist/waitlist.module';
     WaitlistModule,
     HealthModule,
   ],
+  providers: [{ provide: APP_GUARD, useClass: ThrottlerGuard }],
 })
 export class AppModule {}
