@@ -1,0 +1,95 @@
+name: smwhr
+description: "smwhr — you were somewhere."
+publish_to: 'none'
+version: 0.1.0+1
+
+environment:
+  sdk: ^3.11.5
+
+dependencies:
+  flutter:
+    sdk: flutter
+
+  # State management
+  flutter_riverpod: ^2.5.1
+
+  # Navigation
+  go_router: ^14.2.7
+
+  # Networking
+  dio: ^5.7.0
+
+  # Storage
+  flutter_secure_storage: ^9.2.2
+  hive_flutter: ^1.1.0
+
+  # Backend (deferred to Phase 2 but pinned now to avoid resolver churn)
+  supabase_flutter: ^2.5.6
+
+  # Geolocation dual-track (mocked through Session 7)
+  locus: ^2.0.0
+  geolocator: ^13.0.1
+  permission_handler: ^12.0.1  # bumped from CLAUDE.md ^11 — required by locus ^2.0
+  workmanager: ^0.5.2
+
+  # Media
+  camera: ^0.11.0
+  native_exif: ^0.6.2
+
+  # Auth (real OAuth deferred to Phase 2)
+  sign_in_with_apple: ^6.1.1
+  google_sign_in: ^6.2.1
+
+  # Push
+  firebase_messaging: ^15.1.2
+  flutter_local_notifications: ^17.2.3
+
+  # UI
+  flutter_svg: ^2.0.10+1
+  lottie: ^3.1.2
+  cached_network_image: ^3.4.1
+
+  # Typography (used until TTFs are bundled in polish session 12)
+  google_fonts: ^6.2.1
+
+  # Haptics + share + image gen
+  share_plus: ^10.0.2
+
+  cupertino_icons: ^1.0.8
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ^6.0.0
+
+flutter:
+  uses-material-design: true
+
+  assets:
+    - assets/badges/
+    - assets/icons/
+    - assets/animations/
+
+  # Custom TTFs are deferred to Session 12 polish.
+  # Until then, typography is wired through google_fonts (cached on first launch).
+  # When TTFs land, drop them under assets/fonts/<family>/ and uncomment below.
+  # fonts:
+  #   - family: Space Grotesk
+  #     fonts:
+  #       - asset: assets/fonts/SpaceGrotesk/SpaceGrotesk-Regular.ttf
+  #       - asset: assets/fonts/SpaceGrotesk/SpaceGrotesk-Medium.ttf
+  #         weight: 500
+  #       - asset: assets/fonts/SpaceGrotesk/SpaceGrotesk-Bold.ttf
+  #         weight: 700
+  #   - family: Inter
+  #     fonts:
+  #       - asset: assets/fonts/Inter/Inter-Regular.ttf
+  #       - asset: assets/fonts/Inter/Inter-Medium.ttf
+  #         weight: 500
+  #       - asset: assets/fonts/Inter/Inter-SemiBold.ttf
+  #         weight: 600
+  #   - family: JetBrains Mono
+  #     fonts:
+  #       - asset: assets/fonts/JetBrainsMono/JetBrainsMono-Regular.ttf
+  #       - asset: assets/fonts/JetBrainsMono/JetBrainsMono-Medium.ttf
+  #         weight: 500
