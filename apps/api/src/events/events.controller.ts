@@ -30,6 +30,12 @@ export class EventsController {
     return this.events.list(q);
   }
 
+  @Get('by-id/:id')
+  @ApiOperation({ summary: 'Event detail by id (mobile uses this for routing fallbacks)' })
+  byId(@Param('id') id: string) {
+    return this.events.byId(id);
+  }
+
   @Get(':slug')
   @ApiOperation({ summary: 'Event detail by slug' })
   bySlug(@Param('slug') slug: string) {
@@ -50,8 +56,8 @@ export class EventsController {
   }
 
   @Delete(':id/intent')
-  @HttpCode(HttpStatus.NO_CONTENT)
-  @ApiOperation({ summary: 'Cancel intent' })
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({ summary: 'Cancel intent — idempotent, returns the event with updated count' })
   removeIntent(@CurrentUser() user: User, @Param('id') id: string) {
     return this.intents.remove(user, id);
   }

@@ -30,29 +30,31 @@ export class IntentsService {
     });
   }
 
+  /** Idempotent: if an intent already exists, returns the event unchanged. */
   async create(user: User, eventId: string) {
     const event = await this.events.byId(eventId);
     try {
-      const intent = await this.prisma.$transaction(async (tx) => {
-        const created = await tx.intent.create({
-          data: { userId: user.id, eventId: event.id },
-        });
+      await this.prisma.$transaction(async (tx) => {
+        await tx.intent.create({ data: { userId: user.id, eventId: event.id } });
         await tx.event.update({
           where: { id: event.id },
           data: { intentCount: { increment: 1 } },
         });
-        return created;
       });
       await this.audit.record({ type: 'INTENT_SET', userId: user.id, eventId: event.id });
-      return { intent, eventId: event.id };
     } catch (err) {
-      if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === 'P2002') {
-        throw new ApiException(HttpStatus.CONFLICT, 'INTENT_EXISTS', 'Intent already set');
+      if (
+        !(err instanceof Prisma.PrismaClientKnownRequestError) ||
+        err.code !== 'P2002'
+      ) {
+        throw err;
       }
-      throw err;
+      // already set — fall through and return current event
     }
+    return this.events.byId(event.id);
   }
 
+  /** Idempotent: deleting a non-existent intent succeeds. */
   async remove(user: User, eventId: string) {
     const event = await this.events.byId(eventId);
     try {
@@ -67,10 +69,14 @@ export class IntentsService {
       });
       await this.audit.record({ type: 'INTENT_CLEARED', userId: user.id, eventId: event.id });
     } catch (err) {
-      if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === 'P2025') {
-        return;
+      if (
+        !(err instanceof Prisma.PrismaClientKnownRequestError) ||
+        err.code !== 'P2025'
+      ) {
+        throw err;
       }
-      throw err;
+      // no-op
     }
+    return this.events.byId(event.id);
   }
 }

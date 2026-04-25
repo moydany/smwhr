@@ -8,6 +8,7 @@ import 'mock/mock_quests_repository.dart';
 import 'mock/mock_users_repository.dart';
 import 'remote/api_client.dart';
 import 'remote/auth_interceptor.dart';
+import 'remote/auth_token_store.dart';
 import 'remote/real_auth_repository.dart';
 import 'remote/real_badges_repository.dart';
 import 'remote/real_events_repository.dart';
@@ -37,10 +38,26 @@ final mockAuthRepositoryProvider =
 
 // ── Real-mode bootstrap ────────────────────────────────────────────────
 
-/// AuthTokenSource adapter for the real Dio interceptor. In Phase 2 this
-/// reads from the same Hive `mock_auth` box (renamed to `auth_session`)
-/// or a Supabase session bridge — until then it always returns null so
-/// the interceptor short-circuits.
+/// AuthTokenStore is async-constructed (opens the `auth_session` Hive box)
+/// and is the [AuthTokenSource] for the Dio interceptor. Pre-warmed in
+/// `main.dart` so the splash never reads it before it's open.
+final authTokenStoreProvider =
+    FutureProvider<AuthTokenStore>((ref) async => AuthTokenStore.create());
+
+final apiClientProvider = Provider<ApiClient>((ref) {
+  if (ref.read(useMocksProvider)) {
+    return ApiClient.create(tokens: const _NullAuthTokenSource());
+  }
+  final asyncStore = ref.watch(authTokenStoreProvider);
+  return asyncStore.maybeWhen(
+    data: (store) => ApiClient.create(tokens: store),
+    orElse: () => throw StateError(
+      'ApiClient accessed before authTokenStoreProvider resolved. '
+      'Await `ref.read(authTokenStoreProvider.future)` in main() first.',
+    ),
+  );
+});
+
 class _NullAuthTokenSource implements AuthTokenSource {
   const _NullAuthTokenSource();
   @override
@@ -48,10 +65,6 @@ class _NullAuthTokenSource implements AuthTokenSource {
   @override
   Future<String?> tryRefresh() async => null;
 }
-
-final apiClientProvider = Provider<ApiClient>((ref) {
-  return ApiClient.create(tokens: const _NullAuthTokenSource());
-});
 
 // ── Public providers ───────────────────────────────────────────────────
 
@@ -69,7 +82,15 @@ final authRepositoryProvider = Provider<AuthRepository>((ref) {
       ),
     );
   }
-  return RealAuthRepository(ref.watch(apiClientProvider));
+  final asyncStore = ref.watch(authTokenStoreProvider);
+  final store = asyncStore.maybeWhen(
+    data: (s) => s,
+    orElse: () => throw StateError(
+      'RealAuthRepository accessed before authTokenStoreProvider resolved. '
+      'Await `ref.read(authTokenStoreProvider.future)` in main() first.',
+    ),
+  );
+  return RealAuthRepository(ref.watch(apiClientProvider), store);
 });
 
 final usersRepositoryProvider = Provider<UsersRepository>((ref) {

@@ -12,6 +12,7 @@ import '../../../data/providers.dart';
 import '../../../data/repositories/auth_repository.dart';
 import '../../../shared/widgets/smwhr_ambient_background.dart';
 import '../../../shared/widgets/smwhr_button.dart';
+import '../../../shared/widgets/smwhr_text_field.dart';
 
 /// Pantalla 01 — Splash / Auth.
 ///
@@ -91,7 +92,6 @@ class _SplashAuthScreenState extends ConsumerState<SplashAuthScreen>
       result = switch (provider) {
         _Provider.apple => await repo.signInWithApple(),
         _Provider.google => await repo.signInWithGoogle(),
-        _Provider.email => await repo.requestEmailMagicLink('mock@smwhr.dev'),
       };
     } catch (e) {
       if (!mounted) return;
@@ -101,7 +101,25 @@ class _SplashAuthScreenState extends ConsumerState<SplashAuthScreen>
     }
     if (!mounted) return;
     setState(() => _busyProvider = null);
+    _handleResult(result);
+  }
 
+  Future<void> _openEmailSheet() async {
+    if (_busyProvider != null) return;
+    final result = await showModalBottomSheet<AuthResult>(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      barrierColor: Colors.black.withValues(alpha: 0.55),
+      builder: (sheetCtx) => _EmailAuthSheet(
+        repo: ref.read(authRepositoryProvider),
+      ),
+    );
+    if (!mounted || result == null) return;
+    _handleResult(result);
+  }
+
+  void _handleResult(AuthResult result) {
     switch (result) {
       case AuthResultReady():
         HapticFeedback.heavyImpact();
@@ -109,16 +127,9 @@ class _SplashAuthScreenState extends ConsumerState<SplashAuthScreen>
       case AuthResultNeedsOnboarding():
         HapticFeedback.heavyImpact();
         context.go(AppRoutes.onboardingIdentity);
-      case AuthResultEmailSent(:final email):
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            backgroundColor: AppColors.surfaceElevated,
-            content: Text(
-              'Magic link sent to $email · tap any provider above to bypass',
-              style: AppTypography.bodySmall,
-            ),
-          ),
-        );
+      case AuthResultEmailSent():
+        // Reached only if sheet returns a 'sent' (it doesn't today; stays open).
+        break;
       case AuthResultFailure(:final message):
         _showError(message);
     }
@@ -231,10 +242,9 @@ class _SplashAuthScreenState extends ConsumerState<SplashAuthScreen>
                             SmwhrButton(
                               label: 'Continue with email',
                               variant: SmwhrButtonVariant.outline,
-                              isLoading: _busyProvider == _Provider.email,
-                              onPressed: _busyProvider == null
-                                  ? () => _signIn(_Provider.email)
-                                  : null,
+                              isLoading: false,
+                              onPressed:
+                                  _busyProvider == null ? _openEmailSheet : null,
                             ),
                           ],
                         ),
@@ -267,7 +277,214 @@ class _SplashAuthScreenState extends ConsumerState<SplashAuthScreen>
   }
 }
 
-enum _Provider { apple, google, email }
+enum _Provider { apple, google }
+
+/// Bottom sheet that walks the user through the email magic-link OTP flow.
+/// Two stages: email entry → 6-digit code entry. On success it pops the
+/// sheet with the [AuthResult] so the splash can route home or onboarding.
+class _EmailAuthSheet extends StatefulWidget {
+  const _EmailAuthSheet({required this.repo});
+  final AuthRepository repo;
+
+  @override
+  State<_EmailAuthSheet> createState() => _EmailAuthSheetState();
+}
+
+enum _Stage { email, code }
+
+class _EmailAuthSheetState extends State<_EmailAuthSheet> {
+  final _emailController = TextEditingController();
+  final _codeController = TextEditingController();
+  _Stage _stage = _Stage.email;
+  bool _busy = false;
+  String? _error;
+  String _email = '';
+
+  @override
+  void dispose() {
+    _emailController.dispose();
+    _codeController.dispose();
+    super.dispose();
+  }
+
+  Future<void> _sendCode() async {
+    final email = _emailController.text.trim();
+    if (email.isEmpty || !email.contains('@')) {
+      setState(() => _error = 'Enter a valid email');
+      return;
+    }
+    setState(() {
+      _busy = true;
+      _error = null;
+    });
+    final result = await widget.repo.requestEmailMagicLink(email);
+    if (!mounted) return;
+    setState(() => _busy = false);
+    switch (result) {
+      case AuthResultEmailSent(:final email):
+        setState(() {
+          _email = email;
+          _stage = _Stage.code;
+          _codeController.clear();
+        });
+      case AuthResultFailure(:final message):
+        setState(() => _error = message);
+      case AuthResultReady():
+      case AuthResultNeedsOnboarding():
+        Navigator.of(context).pop(result);
+    }
+  }
+
+  Future<void> _verify() async {
+    final code = _codeController.text.trim();
+    if (code.length < 6) {
+      setState(() => _error = 'Enter the 6-digit code from your email');
+      return;
+    }
+    setState(() {
+      _busy = true;
+      _error = null;
+    });
+    final result = await widget.repo.verifyEmailMagicLink(_email, code);
+    if (!mounted) return;
+    setState(() => _busy = false);
+    switch (result) {
+      case AuthResultReady():
+      case AuthResultNeedsOnboarding():
+        Navigator.of(context).pop(result);
+      case AuthResultFailure(:final message):
+        setState(() => _error = message);
+      case AuthResultEmailSent():
+        // Unexpected on verify — treat as failure.
+        setState(() => _error = 'Unexpected response');
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final viewInsets = MediaQuery.of(context).viewInsets;
+    return Padding(
+      padding: EdgeInsets.only(bottom: viewInsets.bottom),
+      child: Container(
+        decoration: const BoxDecoration(
+          color: AppColors.surfaceElevated,
+          borderRadius: BorderRadius.vertical(
+            top: Radius.circular(AppSpacing.radiusCard),
+          ),
+        ),
+        padding: const EdgeInsets.fromLTRB(
+          AppSpacing.lg,
+          AppSpacing.md,
+          AppSpacing.lg,
+          AppSpacing.lg,
+        ),
+        child: SafeArea(
+          top: false,
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Center(
+                child: Container(
+                  width: 36,
+                  height: 4,
+                  margin: const EdgeInsets.only(bottom: AppSpacing.md),
+                  decoration: BoxDecoration(
+                    color: AppColors.border,
+                    borderRadius: BorderRadius.circular(2),
+                  ),
+                ),
+              ),
+              Text(
+                _stage == _Stage.email ? 'Continue with email' : 'Enter the code',
+                style: AppTypography.displayMedium,
+              ),
+              const SizedBox(height: AppSpacing.xs),
+              Text(
+                _stage == _Stage.email
+                    ? 'We\'ll send you a 6-digit code. No password.'
+                    : 'Sent to $_email. Check your inbox.',
+                style: AppTypography.bodyMedium.copyWith(
+                  color: AppColors.textSecondary,
+                ),
+              ),
+              const SizedBox(height: AppSpacing.lg),
+              if (_stage == _Stage.email)
+                SmwhrTextField(
+                  controller: _emailController,
+                  hint: 'you@example.com',
+                  keyboardType: TextInputType.emailAddress,
+                  textInputAction: TextInputAction.done,
+                  onSubmitted: (_) => _sendCode(),
+                  readOnly: _busy,
+                  autofocus: true,
+                )
+              else
+                SmwhrTextField(
+                  controller: _codeController,
+                  hint: '••••••',
+                  keyboardType: TextInputType.number,
+                  textInputAction: TextInputAction.done,
+                  inputFormatters: [
+                    FilteringTextInputFormatter.digitsOnly,
+                    LengthLimitingTextInputFormatter(8),
+                  ],
+                  onSubmitted: (_) => _verify(),
+                  readOnly: _busy,
+                  autofocus: true,
+                ),
+              if (_error != null) ...[
+                const SizedBox(height: AppSpacing.xs),
+                Text(
+                  _error!,
+                  style: AppTypography.bodySmall.copyWith(
+                    color: AppColors.error,
+                  ),
+                ),
+              ],
+              const SizedBox(height: AppSpacing.md),
+              SmwhrButton(
+                label: _stage == _Stage.email ? 'Send code' : 'Verify',
+                variant: SmwhrButtonVariant.primary,
+                isLoading: _busy,
+                onPressed: _busy
+                    ? null
+                    : (_stage == _Stage.email ? _sendCode : _verify),
+              ),
+              const SizedBox(height: AppSpacing.xs),
+              if (_stage == _Stage.code)
+                TextButton(
+                  onPressed: _busy
+                      ? null
+                      : () => setState(() {
+                            _stage = _Stage.email;
+                            _error = null;
+                            _codeController.clear();
+                          }),
+                  child: Text(
+                    'Use a different email',
+                    style: AppTypography.bodySmall.copyWith(
+                      color: AppColors.textSecondary,
+                    ),
+                  ),
+                )
+              else
+                TextButton(
+                  onPressed: _busy ? null : () => Navigator.of(context).pop(),
+                  child: Text(
+                    'Cancel',
+                    style: AppTypography.bodySmall.copyWith(
+                      color: AppColors.textSecondary,
+                    ),
+                  ),
+                ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
 
 /// Big magenta "smwhr" wordmark with double textShadow glow.
 class _Wordmark extends StatelessWidget {
