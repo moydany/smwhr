@@ -6,6 +6,7 @@ import { AuthModule } from './auth/auth.module';
 import { EventsModule } from './events/events.module';
 import { HealthModule } from './health/health.module';
 import { PrismaModule } from './prisma/prisma.module';
+import { QuestsModule } from './quests/quests.module';
 import { UsersModule } from './users/users.module';
 import { WaitlistModule } from './waitlist/waitlist.module';
 
@@ -21,6 +22,7 @@ import { WaitlistModule } from './waitlist/waitlist.module';
     AuthModule,
     UsersModule,
     EventsModule,
+    QuestsModule,
     WaitlistModule,
     HealthModule,
   ],
