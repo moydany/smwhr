@@ -1,0 +1,167 @@
+import { Injectable, Logger } from '@nestjs/common';
+import { Prisma } from '@prisma/client';
+import { PrismaService } from '../../prisma/prisma.service';
+import { ReconciliationService } from './reconciliation.service';
+import { VerificationService } from './verification.service';
+
+@Injectable()
+export class CheckinFinalizerService {
+  private readonly logger = new Logger(CheckinFinalizerService.name);
+
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly reconciler: ReconciliationService,
+    private readonly verifier: VerificationService,
+  ) {}
+
+  /**
+   * Reconcile + score for a single (user, event) pair, write/update the
+   * Checkin row, and issue a Badge if verified. Idempotent.
+   */
+  async finalize(userId: string, eventId: string) {
+    const event = await this.prisma.event.findUnique({ where: { id: eventId } });
+    if (!event) throw new Error(`event ${eventId} not found`);
+
+    const [locusEvents, geolocatorPings, existingCheckin, photo] = await Promise.all([
+      this.prisma.locusEvent.findMany({ where: { userId, eventId } }),
+      this.prisma.geolocatorPing.findMany({ where: { userId, eventId } }),
+      this.prisma.checkin.findUnique({ where: { userId_eventId: { userId, eventId } } }),
+      this.prisma.photo.findFirst({
+        where: { userId, checkin: { userId, eventId } },
+        orderBy: { createdAt: 'desc' },
+      }),
+    ]);
+
+    const r = this.reconciler.reconcile({ locusEvents, geolocatorPings });
+    const score = this.verifier.score({
+      dwellMinutes: r.dwellMinutes,
+      dwellMinimumMin: event.dwellMinimumMin,
+      totalPointsCollected: r.totalPoints,
+      agreementScore: r.agreementScore,
+      integrityVerdict: existingCheckin?.integrityVerdict ?? null,
+      primarySource: r.primarySource,
+      photo: photo
+        ? {
+            isExifValid: photo.isExifValid,
+            isWithinTimeWindow: photo.isWithinTimeWindow,
+            isInsideGeofence: photo.isInsideGeofence,
+          }
+        : null,
+    });
+
+    const checkin = await this.prisma.checkin.upsert({
+      where: { userId_eventId: { userId, eventId } },
+      create: {
+        userId,
+        eventId,
+        primarySource: r.primarySource,
+        reconciliationReason: r.reason,
+        agreementScore: r.agreementScore,
+        reconciledAt: new Date(),
+        dwellMinutes: r.dwellMinutes,
+        firstPointAt: r.firstPointAt,
+        lastPointAt: r.lastPointAt,
+        totalPointsCollected: r.totalPoints,
+        locusEventsCount: locusEvents.length,
+        geolocatorPingsCount: geolocatorPings.length,
+        verificationScore: score.total,
+        isVerified: score.isVerified,
+        verificationReason: this.scoreReason(score, r),
+        photoId: photo?.id ?? existingCheckin?.photoId ?? null,
+      },
+      update: {
+        primarySource: r.primarySource,
+        reconciliationReason: r.reason,
+        agreementScore: r.agreementScore,
+        reconciledAt: new Date(),
+        dwellMinutes: r.dwellMinutes,
+        firstPointAt: r.firstPointAt,
+        lastPointAt: r.lastPointAt,
+        totalPointsCollected: r.totalPoints,
+        locusEventsCount: locusEvents.length,
+        geolocatorPingsCount: geolocatorPings.length,
+        verificationScore: score.total,
+        isVerified: score.isVerified,
+        verificationReason: this.scoreReason(score, r),
+        photoId: photo?.id ?? existingCheckin?.photoId ?? null,
+      },
+    });
+
+    let badgeId: string | null = null;
+    if (score.isVerified) {
+      badgeId = await this.issueBadge(userId, event.id, event.badgeTemplateId, score.total, photo?.id ?? null);
+    }
+
+    return { checkin, scoreBreakdown: score, badgeId };
+  }
+
+  private scoreReason(
+    s: { parts: { dwell: number; tracking: number; crossValidation: number; integrity: number; photo: number; penaltyMultiplier: number } },
+    r: { primarySource: string },
+  ): string {
+    const p = s.parts;
+    return `dwell=${p.dwell} tracking=${p.tracking} cross=${p.crossValidation} integrity=${p.integrity} photo=${p.photo} penalty=${p.penaltyMultiplier} (source=${r.primarySource})`;
+  }
+
+  private async issueBadge(
+    userId: string,
+    eventId: string,
+    templateId: string | null,
+    verificationScore: number,
+    photoId: string | null,
+  ): Promise<string> {
+    const existing = await this.prisma.badge.findUnique({
+      where: { userId_eventId: { userId, eventId } },
+    });
+    if (existing) return existing.id;
+
+    const tplId = templateId ?? (await this.fallbackTemplateId(eventId));
+
+    const badge = await this.prisma.$transaction(async (tx) => {
+      const max = await tx.badge.aggregate({
+        where: { eventId },
+        _max: { serialNumber: true },
+      });
+      const serial = (max._max.serialNumber ?? 0) + 1;
+      const photoUrl = photoId
+        ? await tx.photo.findUnique({ where: { id: photoId } }).then((p) => p?.publicUrl ?? null)
+        : null;
+      const created = await tx.badge.create({
+        data: {
+          userId,
+          eventId,
+          templateId: tplId,
+          serialNumber: serial,
+          totalForEvent: serial,
+          verificationScore,
+          isVerified: true,
+          composedImageUrl: photoUrl,
+          awardedAt: new Date(),
+        },
+      });
+      await tx.event.update({
+        where: { id: eventId },
+        data: { badgeCount: { increment: 1 } },
+      });
+      await tx.badge.updateMany({
+        where: { eventId },
+        data: { totalForEvent: serial },
+      });
+      return created;
+    });
+
+    this.logger.log(`badge issued: user=${userId} event=${eventId} serial=${badge.serialNumber}`);
+    return badge.id;
+  }
+
+  private async fallbackTemplateId(eventId: string): Promise<string> {
+    const event = await this.prisma.event.findUnique({ where: { id: eventId } });
+    const tpl = await this.prisma.badgeTemplate.findFirst({
+      where: { category: event?.category ?? 'music', variant: 'default' },
+    });
+    if (!tpl) {
+      throw new Error(`no badge template for category ${event?.category}`);
+    }
+    return tpl.id;
+  }
+}

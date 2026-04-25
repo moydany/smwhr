@@ -23,12 +23,16 @@ import { IntegrityDto } from './dto/integrity.dto';
 import { SyncTrackingDto } from './dto/sync-tracking.dto';
 import { UploadPhotoMetadataDto } from './dto/upload-photo.dto';
 import { QuestsService } from './quests.service';
+import { CheckinFinalizerService } from './services/checkin-finalizer.service';
 
 @ApiTags('quests')
 @ApiBearerAuth()
 @Controller('quests')
 export class QuestsController {
-  constructor(private readonly quests: QuestsService) {}
+  constructor(
+    private readonly quests: QuestsService,
+    private readonly finalizer: CheckinFinalizerService,
+  ) {}
 
   @Get(':eventId/status')
   @ApiOperation({ summary: 'Active quest state for the current user + event' })
@@ -83,5 +87,12 @@ export class QuestsController {
     @Body() metadata: UploadPhotoMetadataDto,
   ) {
     return this.quests.uploadPhoto(user, eventId, file, metadata);
+  }
+
+  @Post(':eventId/finalize')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({ summary: 'Force reconciliation for current user (dev/admin)' })
+  finalize(@CurrentUser() user: User, @Param('eventId') eventId: string) {
+    return this.finalizer.finalize(user.id, eventId);
   }
 }
