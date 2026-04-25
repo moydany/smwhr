@@ -1,0 +1,377 @@
+// prisma/schema.prisma
+// smwhr — Database schema v1.1 con dual-track geolocation + waitlist
+// Ejecutar con: npx prisma migrate dev --name init
+
+generator client {
+  provider        = "prisma-client-js"
+  previewFeatures = ["postgresqlExtensions"]
+}
+
+datasource db {
+  provider   = "postgresql"
+  url        = env("DATABASE_URL")
+  directUrl  = env("DIRECT_URL")
+  extensions = [postgis, uuidOssp(map: "uuid-ossp")]
+}
+
+// ============================================================
+// USUARIOS
+// ============================================================
+
+model User {
+  id                         String    @id @default(uuid()) @db.Uuid
+  handle                     String    @unique @db.VarChar(20)
+  displayName                String    @db.VarChar(40)
+  email                      String    @unique
+  avatarUrl                  String?
+  bio                        String?   @db.VarChar(140)
+  city                       String?
+  countryCode                String    @default("MX") @db.VarChar(2)
+  interests                  String[]
+
+  authProvider               String
+  authProviderId             String?
+  supabaseUserId             String?   @unique @db.Uuid
+
+  timezone                   String    @default("America/Mexico_City")
+  language                   String    @default("es") @db.VarChar(2)
+
+  pushToken                  String?
+  pushPlatform               String?
+  notificationPromptShownAt  DateTime?
+
+  onboardingCompletedAt      DateTime?
+
+  createdAt                  DateTime  @default(now())
+  lastActiveAt               DateTime  @default(now())
+  updatedAt                  DateTime  @updatedAt
+
+  intents                    Intent[]
+  checkins                   Checkin[]
+  badges                     Badge[]
+  photos                     Photo[]
+  locusEvents                LocusEvent[]
+  geolocatorPings            GeolocatorPing[]
+
+  @@index([email])
+  @@index([handle])
+  @@index([city])
+  @@map("users")
+}
+
+// ============================================================
+// EVENTOS
+// ============================================================
+
+model Event {
+  id                String    @id @default(uuid()) @db.Uuid
+  slug              String    @unique @db.VarChar(100)
+
+  title             String
+  artist            String?
+  venueName         String
+  venueAddress      String?
+  city              String
+  countryCode       String    @default("MX") @db.VarChar(2)
+
+  category          String
+  subcategory       String?
+
+  startsAt          DateTime
+  endsAt            DateTime
+  dwellMinimumMin   Int       @default(60)
+
+  // PostGIS: estos campos requieren raw SQL para insertar/query
+  // geofence_polygon geography(Polygon, 4326)
+  // geofence_center  geography(Point, 4326)
+  geofenceRadiusM   Int?
+
+  externalSource    String?
+  externalId        String?
+  externalUrl       String?
+
+  heroImageUrl      String?
+  heroColor         String?   @db.VarChar(7)
+
+  badgeTemplateId   String?   @db.Uuid
+  badgeTemplate     BadgeTemplate? @relation(fields: [badgeTemplateId], references: [id])
+
+  intentCount       Int       @default(0)
+  badgeCount        Int       @default(0)
+  totalCapacity     Int?
+
+  status            String    @default("scheduled")
+  isFeatured        Boolean   @default(false)
+
+  createdAt         DateTime  @default(now())
+  updatedAt         DateTime  @updatedAt
+
+  intents           Intent[]
+  checkins          Checkin[]
+  badges            Badge[]
+  locusEvents       LocusEvent[]
+  geolocatorPings   GeolocatorPing[]
+
+  @@index([category, startsAt])
+  @@index([city, startsAt])
+  @@index([status, startsAt])
+  @@index([isFeatured, startsAt])
+  @@map("events")
+}
+
+// ============================================================
+// INTENTS
+// ============================================================
+
+model Intent {
+  id        String    @id @default(uuid()) @db.Uuid
+  userId    String    @db.Uuid
+  eventId   String    @db.Uuid
+  createdAt DateTime  @default(now())
+
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  event     Event     @relation(fields: [eventId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, eventId])
+  @@index([eventId])
+  @@map("intents")
+}
+
+// ============================================================
+// LOCUS EVENTS (primary track)
+// ============================================================
+
+model LocusEvent {
+  id                String    @id @default(uuid()) @db.Uuid
+  userId            String    @db.Uuid
+  eventId           String    @db.Uuid
+
+  eventType         String
+
+  latitude          Float
+  longitude         Float
+  accuracy          Float?
+  altitude          Float?
+  speed             Float?
+  heading           Float?
+
+  activity          String?
+  confidence        Float?
+
+  timestamp         DateTime
+  receivedAt        DateTime  @default(now())
+
+  isInsidePolygon   Boolean   @default(false)
+  rawPayload        Json?
+
+  user              User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  event             Event     @relation(fields: [eventId], references: [id], onDelete: Cascade)
+
+  @@index([userId, eventId, timestamp])
+  @@index([eventId, eventType])
+  @@map("locus_events")
+}
+
+// ============================================================
+// GEOLOCATOR PINGS (shadow track)
+// ============================================================
+
+model GeolocatorPing {
+  id                String    @id @default(uuid()) @db.Uuid
+  userId            String    @db.Uuid
+  eventId           String    @db.Uuid
+
+  latitude          Float
+  longitude         Float
+  accuracy          Float?
+  altitude          Float?
+
+  timestamp         DateTime
+  receivedAt        DateTime  @default(now())
+
+  isInsidePolygon   Boolean   @default(false)
+  batteryLevel      Int?
+
+  user              User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  event             Event     @relation(fields: [eventId], references: [id], onDelete: Cascade)
+
+  @@index([userId, eventId, timestamp])
+  @@map("geolocator_pings")
+}
+
+// ============================================================
+// CHECKINS (resultado post-reconciliation)
+// ============================================================
+
+model Checkin {
+  id                      String    @id @default(uuid()) @db.Uuid
+  userId                  String    @db.Uuid
+  eventId                 String    @db.Uuid
+
+  primarySource           String
+  reconciliationReason    String?
+  agreementScore          Float?
+  reconciledAt            DateTime?
+
+  dwellMinutes            Int       @default(0)
+  firstPointAt            DateTime?
+  lastPointAt             DateTime?
+  totalPointsCollected    Int       @default(0)
+  locusEventsCount        Int       @default(0)
+  geolocatorPingsCount    Int       @default(0)
+
+  integrityToken          String?   @db.Text
+  integrityVerdict        String?
+  integrityPlatform       String?
+  integrityCheckedAt      DateTime?
+
+  deviceId                String?
+  deviceModel             String?
+  appVersion              String?
+
+  photoId                 String?   @unique @db.Uuid
+  photo                   Photo?    @relation(fields: [photoId], references: [id])
+
+  verificationScore       Int       @default(0)
+  isVerified              Boolean   @default(false)
+  verificationReason      String?
+
+  createdAt               DateTime  @default(now())
+  updatedAt               DateTime  @updatedAt
+
+  user                    User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  event                   Event     @relation(fields: [eventId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, eventId])
+  @@index([eventId, isVerified])
+  @@index([primarySource])
+  @@map("checkins")
+}
+
+// ============================================================
+// PHOTOS
+// ============================================================
+
+model Photo {
+  id                 String    @id @default(uuid()) @db.Uuid
+  userId             String    @db.Uuid
+
+  storagePath        String
+  publicUrl          String?
+
+  exifTimestamp      DateTime?
+  exifLatitude       Float?
+  exifLongitude      Float?
+  exifRaw            Json?
+
+  isExifValid        Boolean   @default(false)
+  isInsideGeofence   Boolean   @default(false)
+  isWithinTimeWindow Boolean   @default(false)
+
+  nsfwScore          Float?
+  nsfwFlagged        Boolean   @default(false)
+
+  processingStatus   String    @default("pending")
+
+  createdAt          DateTime  @default(now())
+  updatedAt          DateTime  @updatedAt
+
+  user               User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  checkin            Checkin?
+
+  @@index([userId])
+  @@map("photos")
+}
+
+// ============================================================
+// BADGE TEMPLATES
+// ============================================================
+
+model BadgeTemplate {
+  id              String    @id @default(uuid()) @db.Uuid
+  name            String
+  category        String
+  variant         String?
+
+  frameSvgUrl     String
+  accentColor     String    @db.VarChar(7)
+  ambientColor    String?   @db.VarChar(7)
+  textureUrl      String?
+
+  config          Json
+
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+
+  events          Event[]
+  badges          Badge[]
+
+  @@map("badge_templates")
+}
+
+// ============================================================
+// BADGES
+// ============================================================
+
+model Badge {
+  id                  String    @id @default(uuid()) @db.Uuid
+  userId              String    @db.Uuid
+  eventId             String    @db.Uuid
+  templateId          String    @db.Uuid
+
+  serialNumber        Int
+  totalForEvent       Int
+
+  composedImageUrl    String?
+  shareImageUrl       String?
+
+  verificationScore   Int       @default(0)
+  isVerified          Boolean   @default(false)
+  awardedAt           DateTime  @default(now())
+
+  createdAt           DateTime  @default(now())
+  updatedAt           DateTime  @updatedAt
+
+  user                User            @relation(fields: [userId], references: [id], onDelete: Cascade)
+  event               Event           @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  template            BadgeTemplate   @relation(fields: [templateId], references: [id])
+
+  @@unique([userId, eventId])
+  @@index([eventId, serialNumber])
+  @@index([userId, awardedAt])
+  @@map("badges")
+}
+
+// ============================================================
+// WAITLIST (landing)
+// ============================================================
+
+model WaitlistSignup {
+  id          String    @id @default(uuid()) @db.Uuid
+  email       String    @unique
+  source      String    @default("landing")
+  referrer    String?
+  interests   String[]
+  convertedAt DateTime?
+  createdAt   DateTime  @default(now())
+
+  @@index([source])
+  @@map("waitlist_signups")
+}
+
+// ============================================================
+// AUDITORÍA
+// ============================================================
+
+model SystemEvent {
+  id          String    @id @default(uuid()) @db.Uuid
+  type        String
+  userId      String?   @db.Uuid
+  eventId     String?   @db.Uuid
+  metadata    Json?
+  createdAt   DateTime  @default(now())
+
+  @@index([type, createdAt])
+  @@index([userId, createdAt])
+  @@map("system_events")
+}

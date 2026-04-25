@@ -1,0 +1,39 @@
+{
+  "name": "smwhr-monorepo",
+  "version": "0.1.0",
+  "private": true,
+  "description": "smwhr — You were somewhere. LATAM-first verified attendance platform.",
+  "author": "Moi (Orbit M)",
+  "license": "UNLICENSED",
+  "scripts": {
+    "dev:api": "pnpm --filter api start:dev",
+    "dev:landing": "pnpm --filter landing dev",
+    "build:api": "pnpm --filter api build",
+    "build:landing": "pnpm --filter landing build",
+    "start:api": "pnpm --filter api start:prod",
+    "test:api": "pnpm --filter api test",
+    "test:api:e2e": "pnpm --filter api test:e2e",
+    "lint:api": "pnpm --filter api lint",
+    "prisma:generate": "pnpm --filter api prisma generate",
+    "prisma:migrate": "pnpm --filter api prisma migrate dev",
+    "prisma:migrate:deploy": "pnpm --filter api prisma migrate deploy",
+    "prisma:studio": "pnpm --filter api prisma studio",
+    "prisma:seed": "pnpm --filter api prisma db seed",
+    "prisma:reset": "pnpm --filter api prisma migrate reset",
+    "docker:up": "docker-compose up -d",
+    "docker:down": "docker-compose down",
+    "docker:logs": "docker-compose logs -f",
+    "format": "prettier --write \"**/*.{ts,tsx,js,jsx,json,md}\"",
+    "lint": "eslint . --ext .ts,.tsx,.js,.jsx",
+    "clean": "rm -rf node_modules .turbo && pnpm -r exec rm -rf node_modules dist .next .turbo"
+  },
+  "devDependencies": {
+    "prettier": "^3.3.0",
+    "typescript": "^5.5.0",
+    "eslint": "^9.0.0"
+  },
+  "engines": {
+    "node": ">=20.0.0",
+    "pnpm": ">=9.0.0"
+  }
+}
