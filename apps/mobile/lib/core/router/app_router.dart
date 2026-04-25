@@ -86,6 +86,9 @@ final appRouterProvider = Provider<GoRouter>((ref) {
           loc == AppRoutes.splash) {
         return null;
       }
+      // Design-QA mode (`--dart-define=BOOT_AT=...`) bypasses auth gating
+      // so designers/devs can boot any screen directly.
+      if (Env.bootAt.isNotEmpty) return null;
       final auth = ref.read(authStateProvider).valueOrNull;
       if (auth is AuthSignedIn) {
         return null;
