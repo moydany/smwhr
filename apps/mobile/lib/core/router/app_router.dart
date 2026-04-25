@@ -2,6 +2,8 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
+import '../../data/providers.dart';
+import '../../data/repositories/auth_repository.dart';
 import '../../features/_debug/debug_menu_screen.dart';
 import '../../features/auth/screens/splash_auth_screen.dart';
 import '../../features/badges/screens/badge_detail_screen.dart';
@@ -37,14 +39,58 @@ class AppRoutes {
   static const debug = '/_debug';
 }
 
-/// Provider for the GoRouter. In Session 3+ a redirect callback gets wired
-/// in here to bounce the user between splash / onboarding / home based on
-/// `authStateProvider`. For now every route is freely navigable so the
-/// debug menu can drive end-to-end smoke tests.
+/// `Listenable` adapter that fires whenever `authStateProvider` emits a new
+/// state, so go_router re-runs its redirect logic after sign-in / sign-out.
+class _AuthStateListenable extends ChangeNotifier {
+  _AuthStateListenable(this._ref) {
+    _sub = _ref.listen<AsyncValue<AuthState>>(
+      authStateProvider,
+      (_, _) => notifyListeners(),
+      fireImmediately: false,
+    );
+  }
+  final Ref _ref;
+  late final ProviderSubscription<AsyncValue<AuthState>> _sub;
+
+  @override
+  void dispose() {
+    _sub.close();
+    super.dispose();
+  }
+}
+
+/// Provider for the GoRouter.
+///
+/// Redirect contract:
+/// - The debug menu (`/_debug`) and onboarding routes are never redirected.
+/// - Signed-out users hitting any post-auth route get bounced to `/`.
+/// - Signed-in users hitting `/` are bounced to `/home` (or
+///   `/onboarding/identity` if onboarding isn't complete).
 final appRouterProvider = Provider<GoRouter>((ref) {
+  final listenable = _AuthStateListenable(ref);
+  ref.onDispose(listenable.dispose);
+
   return GoRouter(
-    initialLocation: Env.debugRoutesEnabled ? AppRoutes.debug : AppRoutes.splash,
+    initialLocation: (Env.debugRoutesEnabled && !Env.bootAtSplash)
+        ? AppRoutes.debug
+        : AppRoutes.splash,
     debugLogDiagnostics: false,
+    refreshListenable: listenable,
+    redirect: (context, state) {
+      final loc = state.matchedLocation;
+      // Debug menu, onboarding screens, splash itself: never redirect.
+      if (loc == AppRoutes.debug ||
+          loc.startsWith('/onboarding/') ||
+          loc == AppRoutes.splash) {
+        return null;
+      }
+      final auth = ref.read(authStateProvider).valueOrNull;
+      if (auth is AuthSignedIn) {
+        return null;
+      }
+      // Anything else with no signed-in user → splash.
+      return AppRoutes.splash;
+    },
     routes: [
       GoRoute(
         path: AppRoutes.splash,
