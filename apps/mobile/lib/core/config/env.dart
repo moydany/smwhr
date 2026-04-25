@@ -35,4 +35,11 @@ class Env {
   ///     flutter run --dart-define=BOOT_AT_SPLASH=true
   static const bool bootAtSplash =
       bool.fromEnvironment('BOOT_AT_SPLASH', defaultValue: false);
+
+  /// Override the cold-start route to any path. Used for per-screen
+  /// screenshots and design QA. Empty string means "use default".
+  ///
+  ///     flutter run --dart-define=BOOT_AT=/onboarding/identity
+  static const String bootAt =
+      String.fromEnvironment('BOOT_AT', defaultValue: '');
 }

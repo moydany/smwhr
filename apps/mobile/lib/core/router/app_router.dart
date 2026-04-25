@@ -71,9 +71,11 @@ final appRouterProvider = Provider<GoRouter>((ref) {
   ref.onDispose(listenable.dispose);
 
   return GoRouter(
-    initialLocation: (Env.debugRoutesEnabled && !Env.bootAtSplash)
-        ? AppRoutes.debug
-        : AppRoutes.splash,
+    initialLocation: Env.bootAt.isNotEmpty
+        ? Env.bootAt
+        : (Env.debugRoutesEnabled && !Env.bootAtSplash)
+            ? AppRoutes.debug
+            : AppRoutes.splash,
     debugLogDiagnostics: false,
     refreshListenable: listenable,
     redirect: (context, state) {

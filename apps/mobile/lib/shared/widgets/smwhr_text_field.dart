@@ -13,7 +13,9 @@ class SmwhrTextField extends StatefulWidget {
   final String? hint;
   final String? helperText;
   final String? errorText;
-  final String? prefix;
+  /// Widget shown left of the input — typical: `Text('@')` or
+  /// `Icon(Icons.place_outlined)`. Pass null to omit.
+  final Widget? prefix;
   final String? suffix;
   final TextEditingController? controller;
   final FocusNode? focusNode;
@@ -121,13 +123,19 @@ class _SmwhrTextFieldState extends State<SmwhrTextField> {
           child: Row(
             children: [
               if (widget.prefix != null) ...[
-                Text(
-                  widget.prefix!,
-                  style: AppTypography.bodyLarge.copyWith(
+                IconTheme(
+                  data: const IconThemeData(
                     color: AppColors.textTertiary,
+                    size: 18,
+                  ),
+                  child: DefaultTextStyle.merge(
+                    style: AppTypography.bodyLarge.copyWith(
+                      color: AppColors.textTertiary,
+                    ),
+                    child: widget.prefix!,
                   ),
                 ),
-                const SizedBox(width: AppSpacing.xxs),
+                const SizedBox(width: AppSpacing.xs),
               ],
               Expanded(
                 child: TextField(
