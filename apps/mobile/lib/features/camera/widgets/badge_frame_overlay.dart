@@ -19,12 +19,25 @@ import '../../../data/models/event_category.dart';
 class BadgeFrameOverlay extends StatelessWidget {
   final Event event;
   final ImageProvider? photo;
+
+  /// Custom slot for the photo area — overrides [photo] when present.
+  /// Used by the reveal screen so the post-capture preview can be a
+  /// procedural EventArtwork instead of a raw bitmap.
+  final Widget? photoSlot;
+
+  /// "SMWHR #0001 OF 28,412" footer line. When null, the row is hidden
+  /// (pre-capture state).
+  final String? serialLabel;
+  final bool verified;
   final bool tight;
 
   const BadgeFrameOverlay({
     super.key,
     required this.event,
     this.photo,
+    this.photoSlot,
+    this.serialLabel,
+    this.verified = false,
     this.tight = false,
   });
 
@@ -75,7 +88,7 @@ class BadgeFrameOverlay extends StatelessWidget {
           // Photo / placeholder area
           AspectRatio(
             aspectRatio: 1,
-            child: _PhotoArea(photo: photo),
+            child: photoSlot ?? _PhotoArea(photo: photo),
           ),
           const SizedBox(height: AppSpacing.sm),
           // Frame footer
@@ -109,6 +122,49 @@ class BadgeFrameOverlay extends StatelessWidget {
                     color: AppColors.textTertiary,
                   ),
                 ),
+                if (serialLabel != null) ...[
+                  const SizedBox(height: AppSpacing.xs),
+                  Container(
+                    height: 1,
+                    color: AppColors.borderSoft,
+                  ),
+                  const SizedBox(height: AppSpacing.xs),
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      Expanded(
+                        child: Text(
+                          serialLabel!.toUpperCase(),
+                          style: AppTypography.monoSmall.copyWith(
+                            fontSize: 9,
+                            letterSpacing: 1.6,
+                            color: AppColors.textSecondary,
+                          ),
+                        ),
+                      ),
+                      if (verified)
+                        Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Text(
+                              'VERIFIED',
+                              style: AppTypography.monoSmall.copyWith(
+                                fontSize: 9,
+                                letterSpacing: 1.6,
+                                color: AppColors.accent,
+                              ),
+                            ),
+                            const SizedBox(width: 3),
+                            const Icon(
+                              Icons.check_rounded,
+                              size: 10,
+                              color: AppColors.accent,
+                            ),
+                          ],
+                        ),
+                    ],
+                  ),
+                ],
               ],
             ),
           ),
