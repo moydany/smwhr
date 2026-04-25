@@ -17,7 +17,9 @@ class AppSpacing {
 
   // Border radius
   static const double radiusSmall = 8;
+  static const double radiusChip = 10;
   static const double radiusBadge = 12;
+  static const double radiusButton = 14; // matches HTML mock auth buttons
   static const double radiusCard = 16;
   static const double radiusFrame = 54;
   static const double radiusFull = 999;

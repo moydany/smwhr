@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
+import 'package:google_fonts/google_fonts.dart';
 
 import '../../../core/router/app_router.dart';
 import '../../../core/theme/app_colors.dart';
@@ -9,18 +10,17 @@ import '../../../core/theme/app_spacing.dart';
 import '../../../core/theme/app_typography.dart';
 import '../../../data/providers.dart';
 import '../../../data/repositories/auth_repository.dart';
+import '../../../shared/widgets/smwhr_ambient_background.dart';
 import '../../../shared/widgets/smwhr_button.dart';
 
 /// Pantalla 01 — Splash / Auth.
 ///
-/// Cold-start sequence:
-/// 1. Splash phase (1.5 s): wordmark fades up + scales while the magenta
-///    accent line draws in horizontally.
-/// 2. Auth phase: tagline, geo coords, 3 provider buttons, legal copy.
+/// Center-aligned hero matching design/mocks/v1: large magenta wordmark
+/// with double glow, pulsing dot above the wordmark, ambient background
+/// (grid + drift + sweep + stars + ping rings), and 3 provider buttons.
 ///
-/// Splash is skipped when navigating here from elsewhere (e.g. sign-out)
-/// thanks to the router; the [_alreadySplashed] static keeps cold-start
-/// detection cheap.
+/// Cold-start fade-in is short (650 ms): the ambient layers do the
+/// "alive" work after that — the screen is never static.
 class SplashAuthScreen extends ConsumerStatefulWidget {
   const SplashAuthScreen({super.key});
 
@@ -29,14 +29,13 @@ class SplashAuthScreen extends ConsumerStatefulWidget {
 }
 
 class _SplashAuthScreenState extends ConsumerState<SplashAuthScreen>
-    with SingleTickerProviderStateMixin {
-  static bool _alreadySplashed = false;
-
+    with TickerProviderStateMixin {
   late final AnimationController _intro;
   late final Animation<double> _wordmarkOpacity;
   late final Animation<double> _wordmarkScale;
-  late final Animation<double> _accentDraw;
   late final Animation<double> _bodyOpacity;
+  late final Animation<double> _buttonsOpacity;
+  late final AnimationController _dotPulse;
 
   _Provider? _busyProvider;
 
@@ -46,40 +45,39 @@ class _SplashAuthScreenState extends ConsumerState<SplashAuthScreen>
 
     _intro = AnimationController(
       vsync: this,
-      duration: const Duration(milliseconds: 1500),
+      duration: const Duration(milliseconds: 1100),
     );
-
     _wordmarkOpacity = CurvedAnimation(
       parent: _intro,
-      curve: const Interval(0.0, 0.40, curve: Curves.easeOut),
+      curve: const Interval(0.0, 0.55, curve: Curves.easeOut),
     );
-    _wordmarkScale = Tween<double>(begin: 0.86, end: 1.0).animate(
+    _wordmarkScale = Tween<double>(begin: 0.92, end: 1.0).animate(
       CurvedAnimation(
         parent: _intro,
-        curve: const Interval(0.0, 0.50, curve: Curves.easeOutBack),
+        curve: const Interval(0.0, 0.6, curve: Curves.easeOutCubic),
       ),
     );
-    _accentDraw = CurvedAnimation(
-      parent: _intro,
-      curve: const Interval(0.30, 0.70, curve: Curves.easeOutCubic),
-    );
     _bodyOpacity = CurvedAnimation(
+      parent: _intro,
+      curve: const Interval(0.45, 0.85, curve: Curves.easeOut),
+    );
+    _buttonsOpacity = CurvedAnimation(
       parent: _intro,
       curve: const Interval(0.65, 1.0, curve: Curves.easeOut),
     );
 
-    if (_alreadySplashed) {
-      // Reactive navigation back to splash — skip the slow intro.
-      _intro.value = 1.0;
-    } else {
-      _alreadySplashed = true;
-      _intro.forward();
-    }
+    _dotPulse = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 2000),
+    )..repeat(reverse: true);
+
+    _intro.forward();
   }
 
   @override
   void dispose() {
     _intro.dispose();
+    _dotPulse.dispose();
     super.dispose();
   }
 
@@ -101,7 +99,6 @@ class _SplashAuthScreenState extends ConsumerState<SplashAuthScreen>
       _showError(e.toString());
       return;
     }
-
     if (!mounted) return;
     setState(() => _busyProvider = null);
 
@@ -113,8 +110,6 @@ class _SplashAuthScreenState extends ConsumerState<SplashAuthScreen>
         HapticFeedback.heavyImpact();
         context.go(AppRoutes.onboardingIdentity);
       case AuthResultEmailSent(:final email):
-        // Stub for the magic link flow until Session 4 wires the verify
-        // step. For now, show a snack so the dev knows what happened.
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
             backgroundColor: AppColors.surfaceElevated,
@@ -145,123 +140,97 @@ class _SplashAuthScreenState extends ConsumerState<SplashAuthScreen>
   Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: AppColors.bg,
-      body: SafeArea(
-        child: AnimatedBuilder(
-          animation: _intro,
-          builder: (_, _) {
-            return Stack(
-              children: [
-                // Subtle radial glow behind the wordmark
-                Positioned.fill(
-                  child: IgnorePointer(
-                    child: Opacity(
-                      opacity: _wordmarkOpacity.value * 0.5,
-                      child: Container(
-                        decoration: const BoxDecoration(
-                          gradient: RadialGradient(
-                            radius: 0.7,
-                            center: Alignment(0, -0.35),
-                            colors: [
-                              Color(0x33FF2D95),
-                              Colors.transparent,
-                            ],
-                            stops: [0, 1],
-                          ),
-                        ),
-                      ),
-                    ),
-                  ),
-                ),
+      body: Stack(
+        children: [
+          // Ambient layer — runs forever, never blocks taps.
+          const Positioned.fill(
+            child: SmwhrAmbientBackground(
+              pingCenter: Offset(0.5, 0.42),
+              starCount: 60,
+              pingRings: 6,
+            ),
+          ),
 
-                // ── Hero stack ──────────────────────────────────────────
-                Padding(
+          SafeArea(
+            child: AnimatedBuilder(
+              animation: Listenable.merge([_intro, _dotPulse]),
+              builder: (context, _) {
+                return Padding(
                   padding: const EdgeInsets.symmetric(
                     horizontal: AppSpacing.lg,
                   ),
                   child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
+                    crossAxisAlignment: CrossAxisAlignment.center,
                     children: [
-                      const Spacer(flex: 3),
+                      const Spacer(flex: 5),
+
+                      // Pulsing dot above the wordmark — small, bright.
+                      Opacity(
+                        opacity: _wordmarkOpacity.value,
+                        child: _PulseDot(progress: _dotPulse.value),
+                      ),
+                      const SizedBox(height: AppSpacing.md),
+
                       Opacity(
                         opacity: _wordmarkOpacity.value,
                         child: Transform.scale(
                           scale: _wordmarkScale.value,
-                          alignment: Alignment.centerLeft,
-                          child: Text(
-                            'smwhr',
-                            style: AppTypography.displayHero.copyWith(
-                              fontSize: 64,
-                              height: 1,
-                              letterSpacing: -2,
-                              shadows: const [
-                                Shadow(
-                                  color: Color(0x66FF2D95),
-                                  blurRadius: 28,
-                                ),
-                              ],
-                            ),
-                          ),
+                          child: const _Wordmark(),
                         ),
                       ),
                       const SizedBox(height: AppSpacing.sm),
-                      Row(
-                        children: [
-                          Container(
-                            width: 32 * _accentDraw.value,
-                            height: 2,
-                            color: AppColors.accent,
+
+                      Opacity(
+                        opacity: _bodyOpacity.value,
+                        child: Text(
+                          'You were somewhere.',
+                          style: AppTypography.bodyMedium.copyWith(
+                            color: AppColors.textSecondary,
                           ),
-                          if (_accentDraw.value > 0.4) ...[
-                            const SizedBox(width: AppSpacing.sm),
-                            Opacity(
-                              opacity: _accentDraw.value,
-                              child: Text(
-                                'YOU WERE SOMEWHERE',
-                                style: AppTypography.label.copyWith(
-                                  color: AppColors.accent,
-                                ),
-                              ),
-                            ),
-                          ],
-                        ],
+                        ),
                       ),
                       const SizedBox(height: AppSpacing.lg),
-                      Opacity(
-                        opacity: _bodyOpacity.value,
-                        child: const _GeoBadge(),
-                      ),
-                      const Spacer(flex: 4),
 
-                      // ── Auth buttons ───────────────────────────────────
                       Opacity(
                         opacity: _bodyOpacity.value,
+                        child: const _GeoPill(),
+                      ),
+
+                      const Spacer(flex: 6),
+
+                      Opacity(
+                        opacity: _buttonsOpacity.value,
                         child: Column(
                           children: [
                             SmwhrButton(
-                              label: 'Continuar con Apple',
+                              label: 'Continue with Apple',
                               variant: SmwhrButtonVariant.white,
-                              leading: const Icon(Icons.apple, size: 22),
+                              leading: const Padding(
+                                padding: EdgeInsets.only(left: AppSpacing.md),
+                                child: Icon(Icons.apple, size: 20),
+                              ),
                               isLoading: _busyProvider == _Provider.apple,
                               onPressed: _busyProvider == null
                                   ? () => _signIn(_Provider.apple)
                                   : null,
                             ),
-                            const SizedBox(height: AppSpacing.sm),
+                            const SizedBox(height: AppSpacing.xs),
                             SmwhrButton(
-                              label: 'Continuar con Google',
+                              label: 'Continue with Google',
                               variant: SmwhrButtonVariant.dark,
-                              leading: const _GoogleGlyph(),
+                              leading: const Padding(
+                                padding: EdgeInsets.only(left: AppSpacing.md),
+                                child: _GoogleGlyph(),
+                              ),
                               isLoading: _busyProvider == _Provider.google,
                               onPressed: _busyProvider == null
                                   ? () => _signIn(_Provider.google)
                                   : null,
                             ),
-                            const SizedBox(height: AppSpacing.sm),
+                            const SizedBox(height: AppSpacing.xs),
                             SmwhrButton(
-                              label: 'Continuar con email',
+                              label: 'Continue with email',
                               variant: SmwhrButtonVariant.outline,
-                              leading: const Icon(Icons.mail_outline,
-                                  size: 20),
                               isLoading: _busyProvider == _Provider.email,
                               onPressed: _busyProvider == null
                                   ? () => _signIn(_Provider.email)
@@ -270,25 +239,29 @@ class _SplashAuthScreenState extends ConsumerState<SplashAuthScreen>
                           ],
                         ),
                       ),
-                      const SizedBox(height: AppSpacing.lg),
+
+                      const SizedBox(height: AppSpacing.md),
                       Opacity(
-                        opacity: _bodyOpacity.value * 0.8,
+                        opacity: _buttonsOpacity.value,
                         child: Text(
-                          'Al continuar aceptas los Términos y la '
-                          'Política de privacidad.',
-                          style: AppTypography.bodySmall.copyWith(
-                            color: AppColors.textTertiary,
+                          'By continuing you agree to our Terms and Privacy.',
+                          textAlign: TextAlign.center,
+                          style: GoogleFonts.inter(
+                            fontSize: 11,
+                            fontWeight: FontWeight.w400,
+                            letterSpacing: -0.11,
+                            color: const Color(0xFF444444),
                           ),
                         ),
                       ),
                       const SizedBox(height: AppSpacing.md),
                     ],
                   ),
-                ),
-              ],
-            );
-          },
-        ),
+                );
+              },
+            ),
+          ),
+        ],
       ),
     );
   }
@@ -296,54 +269,141 @@ class _SplashAuthScreenState extends ConsumerState<SplashAuthScreen>
 
 enum _Provider { apple, google, email }
 
-/// Tulancingo coordinates — replaced with live Geolocator data once the
-/// real location flow lands (Session 4 / Phase 2).
-class _GeoBadge extends StatelessWidget {
-  const _GeoBadge();
+/// Big magenta "smwhr" wordmark with double textShadow glow.
+class _Wordmark extends StatelessWidget {
+  const _Wordmark();
 
   @override
   Widget build(BuildContext context) {
-    return Row(
-      children: [
-        Container(
-          width: 6,
-          height: 6,
-          decoration: const BoxDecoration(
-            color: AppColors.accent,
-            shape: BoxShape.circle,
+    return Text(
+      'smwhr',
+      style: GoogleFonts.spaceGrotesk(
+        fontSize: 68,
+        fontWeight: FontWeight.w700,
+        letterSpacing: -3.4,
+        height: 1.0,
+        color: AppColors.accent,
+        shadows: const [
+          Shadow(
+            color: Color(0x73FF2D95), // ~45% magenta
+            blurRadius: 40,
           ),
-        ),
-        const SizedBox(width: AppSpacing.xs),
-        Text(
-          '20.0850° N · -98.3630° W',
-          style: AppTypography.monoSmall.copyWith(
-            color: AppColors.textTertiary,
+          Shadow(
+            color: Color(0x33FF2D95), // ~20% magenta
+            blurRadius: 80,
           ),
-        ),
-      ],
+        ],
+      ),
     );
   }
 }
 
-/// Lightweight stand-in for the Google "G" mark until SVG icons land in
-/// Session 12 (polish).
+/// 6×6 pulsing magenta dot — `smwhrPulse`-style heartbeat (0.55↔1 opacity).
+class _PulseDot extends StatelessWidget {
+  final double progress; // 0..1 from controller (reverses)
+  const _PulseDot({required this.progress});
+
+  @override
+  Widget build(BuildContext context) {
+    final opacity = 0.55 + 0.45 * progress; // 0.55..1.0
+    return Container(
+      width: 6,
+      height: 6,
+      decoration: BoxDecoration(
+        color: AppColors.accent.withValues(alpha: opacity),
+        shape: BoxShape.circle,
+        boxShadow: [
+          BoxShadow(
+            color: AppColors.accent.withValues(alpha: 0.6 * progress),
+            blurRadius: 8,
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+/// Geo coords pill — a tiny mono row centred under the tagline. The leading
+/// dot blinks (3 s) per the HTML mock.
+class _GeoPill extends StatefulWidget {
+  const _GeoPill();
+
+  @override
+  State<_GeoPill> createState() => _GeoPillState();
+}
+
+class _GeoPillState extends State<_GeoPill>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _blink;
+
+  @override
+  void initState() {
+    super.initState();
+    _blink = AnimationController(
+      vsync: this,
+      duration: const Duration(seconds: 3),
+    )..repeat(reverse: true);
+  }
+
+  @override
+  void dispose() {
+    _blink.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AnimatedBuilder(
+      animation: _blink,
+      builder: (context, _) {
+        return Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Container(
+              width: 5,
+              height: 5,
+              decoration: BoxDecoration(
+                color: AppColors.accent.withValues(
+                  alpha: 0.4 + 0.6 * _blink.value,
+                ),
+                shape: BoxShape.circle,
+              ),
+            ),
+            const SizedBox(width: AppSpacing.xs),
+            Text(
+              '20.0849° N   -98.3634° W',
+              style: GoogleFonts.jetBrainsMono(
+                fontSize: 10,
+                fontWeight: FontWeight.w400,
+                letterSpacing: 1.4,
+                color: AppColors.textSecondary,
+              ),
+            ),
+          ],
+        );
+      },
+    );
+  }
+}
+
+/// Lightweight stand-in for the Google "G" mark — small ringed glyph.
 class _GoogleGlyph extends StatelessWidget {
   const _GoogleGlyph();
 
   @override
   Widget build(BuildContext context) {
     return Container(
-      width: 22,
-      height: 22,
+      width: 20,
+      height: 20,
       alignment: Alignment.center,
       decoration: BoxDecoration(
-        borderRadius: BorderRadius.circular(11),
-        border: Border.all(color: AppColors.textPrimary, width: 1.4),
+        borderRadius: BorderRadius.circular(10),
+        border: Border.all(color: AppColors.textPrimary, width: 1.2),
       ),
       child: Text(
         'G',
         style: AppTypography.buttonMedium.copyWith(
-          fontSize: 13,
+          fontSize: 11,
           height: 1,
         ),
       ),

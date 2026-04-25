@@ -36,6 +36,8 @@ class SmwhrButton extends StatelessWidget {
   bool get _enabled => onPressed != null && !isLoading;
 
   // ── Style table ───────────────────────────────────────────────────────
+  // Specs derived from design/mocks/v1 (Continue with Apple/Google/email):
+  // 52 px tall, 14 px radius, 15 px text @ weight 500, letter-spacing -0.15.
   Color get _bg => switch (variant) {
         SmwhrButtonVariant.primary => AppColors.accent,
         SmwhrButtonVariant.white => Colors.white,
@@ -47,12 +49,14 @@ class SmwhrButton extends StatelessWidget {
         SmwhrButtonVariant.primary => Colors.white,
         SmwhrButtonVariant.white => AppColors.bg,
         SmwhrButtonVariant.dark => AppColors.textPrimary,
-        SmwhrButtonVariant.outline => AppColors.textPrimary,
+        SmwhrButtonVariant.outline => const Color(0xFFAAAAAA),
       };
 
   Border? get _border => switch (variant) {
         SmwhrButtonVariant.outline =>
-          Border.all(color: AppColors.border, width: 1.2),
+          Border.all(color: AppColors.borderSoft, width: 1),
+        SmwhrButtonVariant.dark =>
+          Border.all(color: const Color(0xFF222222), width: 1),
         _ => null,
       };
 
@@ -66,42 +70,54 @@ class SmwhrButton extends StatelessWidget {
       duration: AppSpacing.durationFast,
       curve: Curves.easeOut,
       width: fullWidth ? double.infinity : null,
-      height: 56,
+      height: 52,
       padding: const EdgeInsets.symmetric(horizontal: AppSpacing.lg),
       decoration: BoxDecoration(
         color: bg,
         border: _border,
-        borderRadius: BorderRadius.circular(AppSpacing.radiusBadge),
+        borderRadius: BorderRadius.circular(AppSpacing.radiusButton),
       ),
-      child: Center(
-        child: isLoading
-            ? SizedBox(
-                width: 22,
-                height: 22,
-                child: CircularProgressIndicator(
-                  strokeWidth: 2,
-                  valueColor: AlwaysStoppedAnimation(fg),
-                ),
-              )
-            : Row(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  if (leading != null) ...[
-                    IconTheme(
-                      data: IconThemeData(color: fg, size: 20),
-                      child: DefaultTextStyle.merge(
-                        style: TextStyle(color: fg),
-                        child: leading!,
-                      ),
-                    ),
-                    const SizedBox(width: AppSpacing.sm),
-                  ],
-                  Text(
-                    label,
-                    style: AppTypography.buttonLarge.copyWith(color: fg),
+      child: Stack(
+        alignment: Alignment.center,
+        children: [
+          // Icon stays absolutely positioned on the left so the label can
+          // remain perfectly centered relative to the button (matches HTML).
+          if (leading != null && !isLoading)
+            Positioned(
+              left: 0,
+              top: 0,
+              bottom: 0,
+              child: Align(
+                alignment: Alignment.centerLeft,
+                child: IconTheme(
+                  data: IconThemeData(color: fg, size: 20),
+                  child: DefaultTextStyle.merge(
+                    style: TextStyle(color: fg),
+                    child: leading!,
                   ),
-                ],
+                ),
               ),
+            ),
+          if (isLoading)
+            SizedBox(
+              width: 22,
+              height: 22,
+              child: CircularProgressIndicator(
+                strokeWidth: 2,
+                valueColor: AlwaysStoppedAnimation(fg),
+              ),
+            )
+          else
+            Text(
+              label,
+              style: AppTypography.buttonMedium.copyWith(
+                color: fg,
+                fontSize: 15,
+                fontWeight: FontWeight.w500,
+                letterSpacing: -0.15,
+              ),
+            ),
+        ],
       ),
     );
 
