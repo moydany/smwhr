@@ -191,12 +191,13 @@ class BadgeFrameOverlay extends StatelessWidget {
   }
 
   static String _subtitleLine(Event event) {
-    final parts = <String>[];
-    if (event.artistName != null) {
-      parts.add(event.artistName!.toUpperCase());
-    }
-    parts.add(event.title.toUpperCase());
-    return parts.join(' · ');
+    // Avoid the "ROSALÍA · ROSALÍA · MOTOMAMI" duplicate when the title
+    // already contains the artist name. Drop the artist line in that case.
+    final title = event.title.toUpperCase();
+    final artist = event.artistName?.toUpperCase();
+    if (artist == null) return title;
+    if (title.contains(artist)) return title;
+    return '$artist · $title';
   }
 }
 

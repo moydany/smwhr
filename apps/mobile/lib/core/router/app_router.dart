@@ -18,6 +18,7 @@ import '../../features/profile/screens/profile_screen.dart';
 import '../../features/quest/screens/active_quest_screen.dart';
 import '../../features/share/screens/share_screen.dart';
 import '../config/env.dart';
+import 'transitions.dart';
 
 /// Named route paths. Strings live here so widgets don't sprinkle string
 /// literals — and so the debug menu has a single source of truth.
@@ -99,23 +100,40 @@ final appRouterProvider = Provider<GoRouter>((ref) {
     routes: [
       GoRoute(
         path: AppRoutes.splash,
-        builder: (_, _) => const SplashAuthScreen(),
+        pageBuilder: (context, state) => fadeThrough(
+          key: state.pageKey,
+          child: const SplashAuthScreen(),
+          duration: const Duration(milliseconds: 500),
+        ),
       ),
       GoRoute(
         path: AppRoutes.onboardingIdentity,
-        builder: (_, _) => const IdentityScreen(),
+        pageBuilder: (context, state) => fadeThrough(
+          key: state.pageKey,
+          child: const IdentityScreen(),
+        ),
       ),
       GoRoute(
         path: AppRoutes.onboardingInterests,
-        builder: (_, _) => const InterestsScreen(),
+        pageBuilder: (context, state) => fadeThrough(
+          key: state.pageKey,
+          child: const InterestsScreen(),
+        ),
       ),
       GoRoute(
         path: AppRoutes.onboardingPermissions,
-        builder: (_, _) => const PermissionsScreen(),
+        pageBuilder: (context, state) => fadeThrough(
+          key: state.pageKey,
+          child: const PermissionsScreen(),
+        ),
       ),
       GoRoute(
         path: AppRoutes.home,
-        builder: (_, _) => const HomeFeedScreen(),
+        pageBuilder: (context, state) => fadeThrough(
+          key: state.pageKey,
+          child: const HomeFeedScreen(),
+          duration: const Duration(milliseconds: 420),
+        ),
       ),
       GoRoute(
         path: '/events/:slug',
@@ -129,13 +147,18 @@ final appRouterProvider = Provider<GoRouter>((ref) {
       ),
       GoRoute(
         path: '/camera/:eventId',
-        builder: (_, state) =>
-            CameraScreen(eventId: state.pathParameters['eventId']!),
+        pageBuilder: (context, state) => slideUp(
+          key: state.pageKey,
+          child: CameraScreen(eventId: state.pathParameters['eventId']!),
+        ),
       ),
       GoRoute(
         path: '/reveal/:badgeId',
-        builder: (_, state) =>
-            RevealScreen(badgeId: state.pathParameters['badgeId']!),
+        pageBuilder: (context, state) => fadeThrough(
+          key: state.pageKey,
+          child: RevealScreen(badgeId: state.pathParameters['badgeId']!),
+          duration: const Duration(milliseconds: 500),
+        ),
       ),
       GoRoute(
         path: '/badge/:badgeId',

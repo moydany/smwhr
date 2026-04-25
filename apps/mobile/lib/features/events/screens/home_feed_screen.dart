@@ -9,6 +9,7 @@ import '../../../core/theme/app_spacing.dart';
 import '../../../core/theme/app_typography.dart';
 import '../../../data/models/event.dart';
 import '../../../data/providers.dart';
+import '../../../shared/widgets/skeleton.dart';
 import '../widgets/event_list_card.dart';
 import '../widgets/featured_event_card.dart';
 
@@ -51,14 +52,7 @@ class HomeFeedScreen extends ConsumerWidget {
               const SliverToBoxAdapter(child: SizedBox(height: AppSpacing.lg)),
               eventsAsync.when(
                 loading: () => const SliverToBoxAdapter(
-                  child: Padding(
-                    padding: EdgeInsets.all(AppSpacing.xl),
-                    child: Center(
-                      child: CircularProgressIndicator(
-                        color: AppColors.accent,
-                      ),
-                    ),
-                  ),
+                  child: _LoadingSkeleton(),
                 ),
                 error: (e, _) => SliverToBoxAdapter(
                   child: _ErrorBanner(message: e.toString()),
@@ -130,11 +124,11 @@ class _HomeTopBar extends StatelessWidget {
         children: [
           Text(
             'smwhr',
-            style: AppTypography.bodyMedium.copyWith(
-              fontFamily: AppTypography.bodyMedium.fontFamily,
+            style: AppTypography.displaySmall.copyWith(
+              fontSize: 18,
+              fontWeight: FontWeight.w700,
+              letterSpacing: -0.6,
               color: AppColors.textPrimary,
-              fontWeight: FontWeight.w600,
-              letterSpacing: -0.4,
             ),
           ),
           const Spacer(),
@@ -208,6 +202,30 @@ class _EmptyState extends StatelessWidget {
               color: AppColors.textSecondary,
             ),
           ),
+        ],
+      ),
+    );
+  }
+}
+
+/// Skeleton placeholder shown while events load. Mirrors the real layout
+/// (one big featured card + 3 list rows) so the page doesn't jolt when
+/// data lands.
+class _LoadingSkeleton extends StatelessWidget {
+  const _LoadingSkeleton();
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: AppSpacing.lg),
+      child: Column(
+        children: [
+          const Skeleton(height: 320, radius: AppSpacing.radiusCard),
+          const SizedBox(height: AppSpacing.lg),
+          for (var i = 0; i < 3; i++) ...[
+            const Skeleton(height: 80, radius: AppSpacing.radiusButton),
+            const SizedBox(height: AppSpacing.xs),
+          ],
         ],
       ),
     );
