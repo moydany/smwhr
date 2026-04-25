@@ -3,19 +3,27 @@ import { Logger, ValidationPipe } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger';
 import { AppModule } from './app.module';
+import { ApiExceptionFilter } from './common/filters/api-exception.filter';
 
 async function bootstrap() {
-  const app = await NestFactory.create(AppModule);
+  const app = await NestFactory.create(AppModule, { bufferLogs: false });
   const config = app.get(ConfigService);
   const logger = new Logger('Bootstrap');
+
+  app.enableCors({
+    origin: true,
+    credentials: true,
+  });
 
   app.useGlobalPipes(
     new ValidationPipe({
       whitelist: true,
       transform: true,
       forbidNonWhitelisted: true,
+      transformOptions: { enableImplicitConversion: true },
     }),
   );
+  app.useGlobalFilters(new ApiExceptionFilter());
 
   const swaggerConfig = new DocumentBuilder()
     .setTitle('smwhr API')
