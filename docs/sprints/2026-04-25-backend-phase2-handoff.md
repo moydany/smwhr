@@ -4,8 +4,10 @@
 > where this one left off without re-reading every commit.
 
 **Status:** Phase 2 backend complete through soft launch readiness as of
-2026-04-25. 6 sequential commits on `main` from empty `apps/api/` to a
-deployable NestJS API serving the entire R0.1 mobile contract.
+2026-04-25. 9 sequential commits on `main` from empty `apps/api/` to a
+deployable NestJS API serving the entire R0.1 mobile contract, plus
+PostGIS geofence verification, audit logging, and a notification stub
+ready for the FCM/APNs swap.
 
 ---
 
@@ -28,7 +30,7 @@ deployable NestJS API serving the entire R0.1 mobile contract.
 
 ---
 
-## What got shipped (6 commits)
+## What got shipped (9 commits)
 
 | Commit | Title | Highlights |
 |--------|-------|------------|
@@ -37,7 +39,11 @@ deployable NestJS API serving the entire R0.1 mobile contract.
 | `4f8d96c` | session 3 — events + intents + waitlist + seed | `add_event_description` migration; `GET /events` (filters: category, city, featured, from, to, limit, offset; featured-first then startsAt asc); `GET /events/:slug`; intents under `/events/:id/intent` (toggle + count, atomic in tx); public `POST /waitlist`; idempotent seed (5 templates, 9 demo users, 15 future events, 7 past events for badges, 4 intents, 7 historic badges) aligned with `apps/mobile/lib/data/mock` |
 | `6fd6516` | session 4 — quests | StorageService (Supabase Storage; photos bucket private, badges + avatars public); `GET /quests/:eventId/status`; `POST /quests/:eventId/sync` (batch ingest, max 5000 each, INTENT_REQUIRED guard); `POST /quests/:eventId/integrity` (App Attest / Play Integrity token); `POST /quests/:eventId/photo` (multipart, 12MB cap, mime allowlist, EXIF metadata, isExifValid + isWithinTimeWindow ±30min) |
 | `2f456b1` | session 5 — reconciliation, scoring, badges, cron | VerificationService (pure scoring 0-100 with bucket breakdown); ReconciliationService (5 strategies: cross_validated, divergence_conservative, locus_complete, locus_partial, geolocator_fallback, insufficient); CheckinFinalizerService (orchestrates + mints serial-numbered Badge); `POST /quests/:eventId/finalize` (manual trigger); `CloseEndedEventsCron` every 5 min for events that ended ≥1h ago; `GET /me/badges`, `GET /badges/:id`, `GET /badges/:id/share` |
-| `<this>` | session 6 — hardening + deploy | helmet (HSTS, X-Frame, X-Content-Type-Options); ThrottlerModule (20/s short + 300/min long, APP_GUARD); CORS allowlist (smwhr.dev, smwhr.quest, *.vercel.app, localhost); Dockerfile (multi-stage, pnpm 10.31, Node 20-bookworm-slim) + .dockerignore; railway.json with `/health` healthcheck; `start:prod` runs `prisma migrate deploy` first; this handoff doc |
+| `4867d9d` | session 6 — hardening + deploy | helmet (HSTS, X-Frame, X-Content-Type-Options); ThrottlerModule (20/s short + 300/min long, APP_GUARD); CORS allowlist (smwhr.dev, smwhr.quest, *.vercel.app, localhost); Dockerfile (multi-stage, pnpm 10.31, Node 20-bookworm-slim) + .dockerignore; railway.json with `/health` healthcheck; `start:prod` runs `prisma migrate deploy` first |
+| `34a1d42` | (chore) | Adds `*.ngrok-free.app` + `*.ngrok.app` to CORS allowlist for tunnelled local dev |
+| `fe304f0` | session 7 — PostGIS geofence | Moves `postgis` extension to `extensions` schema; `add_event_geofence` migration adds `geofence_polygon geography(Polygon, 4326)` + `geofence_center geography(Point, 4326)` + GiST indexes; `Unsupported(...)` declarations in schema.prisma; GeoService (bulk `applyGeofenceTo` via `ST_Contains`, single-point `pointIsInside`, polygon writer for seed); QuestsService.sync recomputes per-point isInsidePolygon, uploadPhoto computes photo isInsideGeofence; seed sets polygons for all 22 events from a 12-venue VENUES table; smoke verified inside/outside flagged correctly |
+| `ef4978f` | session 8 — audit logging | AuditModule (Global) + AuditService.record() — single, never-throws append into system_events; 12 typed event names hooked in: USER_AUTO_CREATED, ONBOARDING_COMPLETED, INTENT_SET, INTENT_CLEARED, QUEST_SYNC, INTEGRITY_ATTESTED, PHOTO_UPLOADED, CHECKIN_FINALIZED, BADGE_ISSUED, WAITLIST_SIGNUP, AUTH_OTP_REQUESTED, AUTH_OTP_VERIFIED |
+| `e9ba1cc` | session 9 — notification stub | NotificationModule (Global) + NotificationService with notifyBadgeIssued + notifyEventStartingSoon. Looks up user's pushToken/pushPlatform, formats payload, logs the dispatch. Real FCM/APNs lands by replacing the body of `dispatch()` only — interface stable. Wired from CheckinFinalizerService when a Badge is minted |
 
 ---
 
@@ -225,19 +231,28 @@ Intentionally deferred — fine for soft launch, fix post-BTS:
 
 | Stub | Where | Plan |
 |---|---|---|
-| Apple / Google sign-in | `/auth/{apple,google}` 501 | add provider creds in Supabase, switch to `signInWithIdToken` in AuthService |
-| Real polygon geofence | `geofence_polygon` commented in schema; photo `isInsideGeofence` always false; ping `isInsidePolygon` always false | add migration with `geography(Polygon, 4326)` + raw `ST_Contains` query in TrackingService |
+| Apple / Google sign-in | `/auth/{apple,google}` 501 | add provider creds in Supabase, switch to `signInWithIdToken` in AuthService — Moi to wire close to release |
 | Sharp badge composition | backend stores `composedImageUrl = photo url`; mobile renders via `BadgeFrameOverlay` widget | port the widget logic to a sharp pipeline: frame SVG + photo overlay → 800×1200 display + 1080×1920 share |
-| App Attest / Play Integrity verification | token stored as `pending_verification` | call Apple App Attest / Google Play Integrity validation API in IntegrityService |
-| Push notifications | pushToken stored, never used | wire FCM/APNs via Supabase Functions or a Nest worker |
+| App Attest / Play Integrity verification | token stored as `pending_verification` (gives +3 instead of +15 to score) | call Apple App Attest / Google Play Integrity validation API in IntegrityService |
+| Push notification dispatch | NotificationService logs payload; pushToken stored on User, recipient is looked up correctly | swap `NotificationService.dispatch()` to firebase-admin (FCM) + APNs HTTP/2; payload shape is stable |
 | Vision API NSFW screening | `nsfwScore`/`nsfwFlagged` always default | call Google Vision SafeSearch on photo upload |
 | Ticketmaster integration | events seeded manually | per-vertical sync workers; live catalog refresh |
-| Audit logging | `system_events` table empty | log auth events, badge mints, integrity verdicts |
 
 ---
 
 ## Gotchas & dev notes
 
+- **Migrations touching PostGIS types** (e.g. `geography(...)`) must use
+  `pnpm prisma migrate deploy` instead of `migrate dev`. Reason: the
+  shadow database Prisma spins up for `dev` doesn't have postgis
+  enabled, so it rejects the migration. `deploy` runs against the real
+  DB only and skips shadow validation
+- This Supabase project's postgis was originally in the `topology`
+  schema, which made `geography(...)` unreachable without a qualifier.
+  Fixed by `DROP EXTENSION postgis CASCADE; CREATE EXTENSION postgis
+  WITH SCHEMA extensions;` (commit 7). If you bring up a fresh Supabase
+  project, run `CREATE EXTENSION postgis WITH SCHEMA extensions;`
+  before running any geography migration
 - `nest build` requires `cwd` to be `apps/api/` — running from repo root
   triggers pnpm to look for a global `build` script and falls through.
   Use `pnpm --filter api build` from root or `cd apps/api && pnpm build`
@@ -321,10 +336,13 @@ apps/api/
 
 Paste this into a new chat:
 
-> I'm Moi, founder of smwhr. R0.1 Phase 2 backend is complete (6
-> sequential commits on `main`, NestJS + Supabase + Prisma serving
-> the entire mobile contract end-to-end). All 26 unit tests pass; full
-> smoke ran end-to-end against real Supabase, ending with a verified
-> Badge minted for a synthetic dual-track session.
+> I'm Moi, founder of smwhr. R0.1 Phase 2 backend is complete (9
+> sequential commits on `main`, NestJS + Supabase + Prisma + PostGIS
+> serving the entire mobile contract end-to-end, plus geofence
+> verification, audit logging in system_events, and a notification stub
+> ready for FCM/APNs). All 26 unit tests pass; full smoke ran
+> end-to-end against real Supabase, ending with a verified Badge minted
+> for a synthetic dual-track session. Apple/Google sign-in is the only
+> auth provider deferred until close to release.
 > See `docs/sprints/2026-04-25-backend-phase2-handoff.md` for the full
 > context dump. Today I want to <X>.
