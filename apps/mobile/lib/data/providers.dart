@@ -149,6 +149,12 @@ final questsRepositoryProvider = Provider<QuestsRepository>((ref) {
 /// session — opened/closed per active quest by `QuestTracker`.
 final trackingDbProvider = Provider<TrackingDb>((ref) => TrackingDb());
 
+/// Singleton [PermissionFlow] for the camera screen + QuestTracker. The
+/// flow is stateless; reusing the same instance just keeps the provider
+/// graph tidy.
+final permissionFlowProvider =
+    Provider<PermissionFlow>((ref) => const PermissionFlow());
+
 /// Periodic batch uploader. Pulled out so [BootDrainService] can use the
 /// same instance to flush data left over from a previous session.
 ///
@@ -184,7 +190,7 @@ final trackingSyncProvider = Provider<TrackingSync>((ref) {
 /// provider graph is consistent; the mock `QuestsRepository` ignores it.
 final questTrackerProvider = Provider<QuestTracker>((ref) {
   return QuestTracker(
-    permissionFlow: const PermissionFlow(),
+    permissionFlow: ref.watch(permissionFlowProvider),
     locusTracker: LocusTracker(),
     geolocatorTracker: GeolocatorTracker(),
     trackingDb: ref.watch(trackingDbProvider),
