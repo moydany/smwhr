@@ -74,7 +74,16 @@ class RealQuestsRepository implements QuestsRepository {
     PhotoMetadata? metadata,
   }) async {
     final form = FormData.fromMap({
-      'file': await MultipartFile.fromFile(photo.path),
+      // Explicit `image/jpeg` content type. Without this Dio falls back
+      // on `lookupMediaType(filename)` and — in some Flutter/iOS combos
+      // — that returns `application/octet-stream`, which the Supabase
+      // photos bucket rejects with `mime type ... is not supported`.
+      // The backend then re-throws as 502 BAD_GATEWAY (storage.service:
+      // STORAGE_UPLOAD_FAILED). Pinning the type kills all guessing.
+      'file': await MultipartFile.fromFile(
+        photo.path,
+        contentType: DioMediaType('image', 'jpeg'),
+      ),
       if (metadata?.exifTimestamp != null)
         'exifTimestamp': metadata!.exifTimestamp!.toIso8601String(),
       if (metadata?.exifLatitude != null)

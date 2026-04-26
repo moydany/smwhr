@@ -127,7 +127,13 @@ class _CameraScreenState extends ConsumerState<CameraScreen>
     );
     final ctrl = CameraController(
       back,
-      ResolutionPreset.high,
+      // `medium` (~480p) keeps JPGs under ~300 KB so the multipart
+      // upload stays under ngrok's effective body limit and finishes
+      // before any reasonable timeout. The badge frame composites at
+      // 1:1 aspect, so anything above 720x720 is downscaled anyway.
+      // Bump to `high` post-launch if the share-card pipeline needs
+      // more pixels.
+      ResolutionPreset.medium,
       enableAudio: false,
     );
     try {
