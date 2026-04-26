@@ -81,20 +81,32 @@ final appRouterProvider = Provider<GoRouter>((ref) {
     refreshListenable: listenable,
     redirect: (context, state) {
       final loc = state.matchedLocation;
-      // Debug menu, onboarding screens, splash itself: never redirect.
-      if (loc == AppRoutes.debug ||
-          loc.startsWith('/onboarding/') ||
-          loc == AppRoutes.splash) {
+
+      // Debug menu and onboarding screens bypass gating either way.
+      if (loc == AppRoutes.debug || loc.startsWith('/onboarding/')) {
         return null;
       }
-      // Design-QA mode (`--dart-define=BOOT_AT=...`) bypasses auth gating
-      // so designers/devs can boot any screen directly.
+      // Design-QA mode (`--dart-define=BOOT_AT=...`) bypasses gating.
       if (Env.bootAt.isNotEmpty) return null;
-      final auth = ref.read(authStateProvider).valueOrNull;
+
+      // Use the repo's synchronous getter — `authStateProvider` is a
+      // StreamProvider and may be `loading` for a tick after cold start,
+      // which would mis-classify signed-in users as signed-out.
+      final auth = ref.read(authRepositoryProvider).currentState;
+
       if (auth is AuthSignedIn) {
+        // Signed-in user landing on splash → bounce to where they
+        // belong (home, or onboarding if it isn't finished yet).
+        if (loc == AppRoutes.splash) {
+          return auth.user.hasCompletedOnboarding
+              ? AppRoutes.home
+              : AppRoutes.onboardingIdentity;
+        }
         return null;
       }
-      // Anything else with no signed-in user → splash.
+
+      // Not signed in. Splash is the destination.
+      if (loc == AppRoutes.splash) return null;
       return AppRoutes.splash;
     },
     routes: [
