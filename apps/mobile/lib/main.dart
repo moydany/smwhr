@@ -6,6 +6,8 @@ import 'package:hive_flutter/hive_flutter.dart';
 import 'core/config/env.dart';
 import 'core/router/app_router.dart';
 import 'core/theme/app_theme.dart';
+import 'data/local/adapters/geolocator_ping_adapter.dart';
+import 'data/local/adapters/locus_event_adapter.dart';
 import 'data/providers.dart';
 
 Future<void> main() async {
@@ -15,6 +17,14 @@ Future<void> main() async {
   // token store (Phase 2 cutover), and the dual-track tracking_db
   // (Session 7). Adapters get registered alongside the trackers.
   await Hive.initFlutter();
+
+  // Tracking adapters are only needed when we're actually pumping events
+  // into the dual-track DB (i.e. in real mode against the NestJS backend).
+  // Mock mode never touches Hive boxes typed against these models.
+  if (!Env.useMocks) {
+    Hive.registerAdapter(LocusEventAdapter());
+    Hive.registerAdapter(GeolocatorPingAdapter());
+  }
 
   // Force the dark status bar at cold start (avoids the iOS default white flash).
   SystemChrome.setSystemUIOverlayStyle(
