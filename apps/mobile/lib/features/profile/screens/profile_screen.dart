@@ -262,10 +262,12 @@ final _userByHandleProvider =
 final _userBadgesProvider =
     FutureProvider.autoDispose.family<List<Badge>, String>(
         (ref, key) async {
-  final repo = ref.watch(usersRepositoryProvider);
+  // Own profile uses the backend's dedicated /me/badges endpoint — no
+  // handle round-trip, and works during the post-auth / pre-onboarding
+  // window when the placeholder handle wouldn't resolve through
+  // /users/:handle/badges anyway.
   if (key == '@me') {
-    final me = await repo.getMe();
-    return repo.getUserBadges(me.id);
+    return ref.watch(badgesRepositoryProvider).listMyBadges();
   }
-  return repo.getUserBadges(key);
+  return ref.watch(usersRepositoryProvider).getUserBadges(key);
 });
