@@ -126,4 +126,14 @@ class RealQuestsRepository implements QuestsRepository {
       },
     );
   }
+
+  @override
+  Future<String?> finalizeQuest(String eventId) async {
+    final res = await _api.dio.post<Map<String, dynamic>>(
+      '/quests/$eventId/finalize',
+    );
+    // Backend returns `{ checkin, scoreBreakdown, badgeId }`. badgeId is
+    // null when score < threshold (the verifier didn't pass).
+    return res.data?['badgeId'] as String?;
+  }
 }

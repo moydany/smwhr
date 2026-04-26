@@ -193,11 +193,40 @@ class _CameraScreenState extends ConsumerState<CameraScreen>
       _showVerificationWarning(result);
     }
 
-    // Reveal screen receives a deterministic mock badge id while we
-    // wait for the backend's finalize → badge issuance to land. The
-    // photoId from the upload response isn't a badge id; the badge
-    // gets minted later by `/quests/:id/finalize`.
-    context.go(AppRoutes.reveal('bdg-001'));
+    // Force-finalize the checkin so the user lands on the real badge.
+    // Production flow runs this via the closeEndedEvents cron 1h after
+    // the event ends; calling it from the client gives the smoke a
+    // satisfying loop close and matches the plan's "Done When".
+    String? badgeId;
+    try {
+      badgeId = await repo.finalizeQuest(event.id);
+    } catch (_) {/* swallow — fall through to graceful fallback */}
+
+    if (!mounted) return;
+
+    if (badgeId != null) {
+      context.go(AppRoutes.reveal(badgeId));
+    } else {
+      // Verifier didn't pass (score below threshold) — most often
+      // because the dwell time hasn't accumulated enough points yet,
+      // OR the integrity / EXIF / geofence checks knocked the score
+      // down. Surface a friendly notice and bounce back to the active
+      // quest screen so the tracker keeps collecting.
+      ScaffoldMessenger.maybeOf(context)?.showSnackBar(
+        SnackBar(
+          backgroundColor: AppColors.surface,
+          duration: const Duration(seconds: 5),
+          content: Text(
+            'Foto guardada. Tu insignia se emitirá cuando '
+            'se cumpla el dwell mínimo del evento.',
+            style: AppTypography.bodySmall.copyWith(
+              color: AppColors.textPrimary,
+            ),
+          ),
+        ),
+      );
+      context.pop();
+    }
   }
 
   void _showVerificationWarning(PhotoUploadResult result) {

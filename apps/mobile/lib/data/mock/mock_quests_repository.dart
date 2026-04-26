@@ -83,6 +83,14 @@ class MockQuestsRepository implements QuestsRepository {
     await MockLatency.shortDelay();
   }
 
+  @override
+  Future<String?> finalizeQuest(String eventId) async {
+    await MockLatency.shortDelay();
+    // Mock badge id matches one of the seeded mock badges so the
+    // reveal screen + profile collection grid both light up.
+    return 'bdg-001';
+  }
+
   void dispose() {
     for (final r in _runtimes.values) {
       r.dispose();

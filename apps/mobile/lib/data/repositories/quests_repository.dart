@@ -32,4 +32,13 @@ abstract class QuestsRepository {
 
   /// Optional integrity ping (Play Integrity / DeviceCheck attestation).
   Future<void> attestIntegrity(String eventId, String token);
+
+  /// Force-finalize the checkin and (if the verifier passes) mint the
+  /// badge. Production path is the `closeEndedEvents` cron 1h after
+  /// the event ends; the mobile calls this directly after a photo
+  /// capture so the user lands on `/reveal/<realBadgeId>` instead of
+  /// a stub. Returns the badge id, or null when the verifier rejects
+  /// (score below threshold) — caller should fall back to a "your
+  /// badge will be issued after the event" UX.
+  Future<String?> finalizeQuest(String eventId);
 }
