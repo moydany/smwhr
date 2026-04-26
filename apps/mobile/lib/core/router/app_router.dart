@@ -74,7 +74,7 @@ final appRouterProvider = Provider<GoRouter>((ref) {
   return GoRouter(
     initialLocation: Env.bootAt.isNotEmpty
         ? Env.bootAt
-        : (Env.debugRoutesEnabled && !Env.bootAtSplash)
+        : (Env.debugRoutesEnabled && Env.bootAtDebug)
             ? AppRoutes.debug
             : AppRoutes.splash,
     debugLogDiagnostics: false,

@@ -29,12 +29,13 @@ class Env {
   /// True only on local dev / mock builds — gates the `/_debug` route.
   static bool get debugRoutesEnabled => useMocks;
 
-  /// Override the cold-start route from `/_debug` to `/` (the splash/auth
-  /// screen). Useful for screenshots of the real boot flow. Pass via
+  /// Opt-in to boot directly into the debug menu. Off by default so cold
+  /// start always lands on the real splash/auth screen — both in mock and
+  /// real mode. Only honoured when [debugRoutesEnabled] is true.
   ///
-  ///     flutter run --dart-define=BOOT_AT_SPLASH=true
-  static const bool bootAtSplash =
-      bool.fromEnvironment('BOOT_AT_SPLASH', defaultValue: false);
+  ///     flutter run --dart-define=BOOT_AT_DEBUG=true
+  static const bool bootAtDebug =
+      bool.fromEnvironment('BOOT_AT_DEBUG', defaultValue: false);
 
   /// Override the cold-start route to any path. Used for per-screen
   /// screenshots and design QA. Empty string means "use default".
