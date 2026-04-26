@@ -22,6 +22,8 @@ import '../models/quest.dart';
 class TrackingDb {
   static const String _kSyncedLocus = 'synced_locus';
   static const String _kSyncedPings = 'synced_pings';
+  static const String _kIndexBox = 'tracking_event_ids';
+  static const String _kIndexKey = 'ids';
 
   final Map<String, _EventBoxes> _open = {};
 
@@ -31,6 +33,7 @@ class TrackingDb {
     final pings = await Hive.openBox<GeolocatorPing>('tracking_${eventId}_pings');
     final meta = await Hive.openBox('tracking_${eventId}_meta');
     _open[eventId] = _EventBoxes(locus: locus, pings: pings, meta: meta);
+    await _recordEventId(eventId);
   }
 
   Future<void> close(String eventId) async {
@@ -112,6 +115,47 @@ class TrackingDb {
     final raw = meta.get(key);
     if (raw is List) return raw.cast<String>().toSet();
     return <String>{};
+  }
+
+  /// Returns every event id that has ever been opened on this device.
+  /// Used by `BootDrainService` to figure out which boxes might still
+  /// have unsynced rows after an offline quest. Survives cold restart.
+  Future<List<String>> recordedEventIds() async {
+    final index = await Hive.openBox(_kIndexBox);
+    try {
+      final raw = index.get(_kIndexKey);
+      if (raw is List) return raw.cast<String>();
+      return const [];
+    } finally {
+      await index.close();
+    }
+  }
+
+  /// Forgets [eventId] from the boot-drain index. Called by the drain
+  /// after a successful flush so we don't keep re-checking dead events.
+  Future<void> forgetEventId(String eventId) async {
+    final index = await Hive.openBox(_kIndexBox);
+    try {
+      final raw = (index.get(_kIndexKey) as List?)?.cast<String>().toSet() ??
+          <String>{};
+      raw.remove(eventId);
+      await index.put(_kIndexKey, raw.toList());
+    } finally {
+      await index.close();
+    }
+  }
+
+  Future<void> _recordEventId(String eventId) async {
+    final index = await Hive.openBox(_kIndexBox);
+    try {
+      final raw = (index.get(_kIndexKey) as List?)?.cast<String>().toSet() ??
+          <String>{};
+      if (raw.add(eventId)) {
+        await index.put(_kIndexKey, raw.toList());
+      }
+    } finally {
+      await index.close();
+    }
   }
 }
 

@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:dio/dio.dart';
 
+import '../local/event_cache.dart';
 import '../models/event.dart';
 import '../models/event_category.dart';
 import '../repositories/events_repository.dart';
@@ -10,10 +11,15 @@ import 'mappers.dart';
 
 /// Backend [GET /events] returns `{items, total, limit, offset}`. We
 /// project to `List<Event>` for the mobile contract.
+///
+/// `getEventBy*` and `setIntent` write through to [EventCache] so the
+/// dual-track quest can boot offline at the venue (no network → fall
+/// back to the cache → still get the polygon for `Locus.addPolygon`).
 class RealEventsRepository implements EventsRepository {
-  RealEventsRepository(this._api);
+  RealEventsRepository(this._api, {required EventCache cache}) : _cache = cache;
 
   final ApiClient _api;
+  final EventCache _cache;
 
   @override
   Future<List<Event>> listEvents({
@@ -47,9 +53,15 @@ class RealEventsRepository implements EventsRepository {
   Future<Event?> getEventBySlug(String slug) async {
     try {
       final res = await _api.dio.get<Map<String, dynamic>>('/events/$slug');
-      return eventFromJson(res.data!);
+      final event = eventFromJson(res.data!);
+      await _cache.save(event);
+      return event;
     } on DioException catch (e) {
       if (e.response?.statusCode == 404) return null;
+      // Network / server error → try the cache so we degrade gracefully.
+      // We can't look up by slug in the cache without scanning, so we skip
+      // the offline fallback here; the by-id path below handles the
+      // common case (active quest reads via `getEventById`).
       rethrow;
     }
   }
@@ -57,10 +69,18 @@ class RealEventsRepository implements EventsRepository {
   @override
   Future<Event?> getEventById(String id) async {
     try {
-      final res = await _api.dio.get<Map<String, dynamic>>('/events/by-id/$id');
-      return eventFromJson(res.data!);
+      final res =
+          await _api.dio.get<Map<String, dynamic>>('/events/by-id/$id');
+      final event = eventFromJson(res.data!);
+      await _cache.save(event);
+      return event;
     } on DioException catch (e) {
       if (e.response?.statusCode == 404) return null;
+      // Offline / server unreachable → return whatever the cache has.
+      // QuestTracker.startQuest needs the polygon and that's exactly
+      // what we cached on the most recent successful read.
+      final cached = await _cache.get(id);
+      if (cached != null) return cached;
       rethrow;
     }
   }
@@ -70,7 +90,11 @@ class RealEventsRepository implements EventsRepository {
     final res = await _api.dio.post<Map<String, dynamic>>(
       '/events/$eventId/intent',
     );
-    return eventFromJson(res.data!);
+    final event = eventFromJson(res.data!);
+    // Pin the event in the cache as soon as the user commits — this is
+    // the canonical "user intends to verify this event" signal.
+    await _cache.save(event);
+    return event;
   }
 
   @override
@@ -78,6 +102,7 @@ class RealEventsRepository implements EventsRepository {
     final res = await _api.dio.delete<Map<String, dynamic>>(
       '/events/$eventId/intent',
     );
+    await _cache.clear(eventId);
     return eventFromJson(res.data!);
   }
 

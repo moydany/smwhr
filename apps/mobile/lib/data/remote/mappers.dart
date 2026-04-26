@@ -85,6 +85,39 @@ Event eventFromJson(Map<String, dynamic> json) {
   );
 }
 
+/// Inverse of [eventFromJson] — produces a JSON shape the local
+/// [EventCache] can persist and re-hydrate offline. Mirrors the field
+/// names the backend would have returned so the same parser works for
+/// both sources. Field omissions match `eventFromJson`'s defaults.
+Map<String, dynamic> eventToCacheJson(Event event) {
+  return {
+    'id': event.id,
+    'slug': event.slug,
+    'title': event.title,
+    if (event.artistName != null) 'artist': event.artistName,
+    'venueName': event.venueName,
+    'city': event.city,
+    'countryCode': event.countryCode,
+    'startsAt': event.startsAt.toIso8601String(),
+    if (event.endsAt != null) 'endsAt': event.endsAt!.toIso8601String(),
+    if (event.heroImageUrl != null) 'heroImageUrl': event.heroImageUrl,
+    'description': event.description,
+    'category': event.category.slug,
+    'geofencePolygon':
+        event.geofencePolygon.map((p) => [p.longitude, p.latitude]).toList(),
+    'dwellMinimumMin': event.dwellMinimumMin,
+    if (event.ticketmasterUrl != null) ...{
+      'externalSource': 'ticketmaster',
+      'externalUrl': event.ticketmasterUrl,
+    },
+    'intentCount': event.intentCount,
+    'badgeCount': event.verifiedAttendeeCount,
+    'isFeatured': event.isFeatured,
+    if (event.badgeFrameUrl != null)
+      'badgeTemplate': {'frameSvgUrl': event.badgeFrameUrl},
+  };
+}
+
 List<LatLng> _polygonFromGeoJson(Object? raw) {
   if (raw is! List) return const [];
   final out = <LatLng>[];

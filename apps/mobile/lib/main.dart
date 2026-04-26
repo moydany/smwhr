@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -45,7 +47,14 @@ Future<void> main() async {
   if (Env.useMocks) {
     await container.read(mockAuthRepositoryProvider.future);
   } else {
-    await container.read(authTokenStoreProvider.future);
+    final tokens = await container.read(authTokenStoreProvider.future);
+    // Best-effort flush of tracker rows from a quest that ended before
+    // the network came back. Only meaningful if we have a token to auth
+    // the POST with — otherwise the drain would just no-op against 401s.
+    // Fire-and-forget: never block the splash on it.
+    if (await tokens.readAccessToken() != null) {
+      unawaited(container.read(bootDrainServiceProvider).run());
+    }
   }
 
   runApp(

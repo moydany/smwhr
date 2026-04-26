@@ -1,11 +1,13 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../core/config/env.dart';
+import '../features/quest/services/boot_drain.dart';
 import '../features/quest/services/geolocator_tracker.dart';
 import '../features/quest/services/locus_tracker.dart';
 import '../features/quest/services/permission_flow.dart';
 import '../features/quest/services/quest_tracker.dart';
 import '../features/quest/services/tracking_sync.dart';
+import 'local/event_cache.dart';
 import 'local/tracking_db.dart';
 import 'mock/mock_auth_repository.dart';
 import 'mock/mock_badges_repository.dart';
@@ -115,7 +117,18 @@ final eventsRepositoryProvider = Provider<EventsRepository>((ref) {
     ref.onDispose(repo.dispose);
     return repo;
   }
-  return RealEventsRepository(ref.watch(apiClientProvider));
+  return RealEventsRepository(
+    ref.watch(apiClientProvider),
+    cache: ref.watch(eventCacheProvider),
+  );
+});
+
+/// On-device cache of events the user has interacted with. Lets the
+/// dual-track quest start at the venue without a network round-trip.
+final eventCacheProvider = Provider<EventCache>((ref) {
+  final cache = EventCache();
+  ref.onDispose(cache.close);
+  return cache;
 });
 
 final questsRepositoryProvider = Provider<QuestsRepository>((ref) {
@@ -136,21 +149,23 @@ final questsRepositoryProvider = Provider<QuestsRepository>((ref) {
 /// session — opened/closed per active quest by `QuestTracker`.
 final trackingDbProvider = Provider<TrackingDb>((ref) => TrackingDb());
 
-/// Lifecycle-owning orchestrator. Constructed even in mock mode so the
-/// provider graph is consistent; the mock `QuestsRepository` ignores it.
-final questTrackerProvider = Provider<QuestTracker>((ref) {
+/// Periodic batch uploader. Pulled out so [BootDrainService] can use the
+/// same instance to flush data left over from a previous session.
+///
+/// The sync closure HTTP-POSTs via `apiClientProvider` directly rather
+/// than calling `RealQuestsRepository.syncTrackingBatch` — that would
+/// close the cycle
+/// `questsRepositoryProvider → questTrackerProvider → trackingSyncProvider → questsRepositoryProvider`.
+final trackingSyncProvider = Provider<TrackingSync>((ref) {
   final api = ref.watch(apiClientProvider);
   final db = ref.watch(trackingDbProvider);
-  final sync = TrackingSync(
+  return TrackingSync(
     db: db,
     syncFn: ({
       required String eventId,
       required locusEvents,
       required geolocatorPings,
     }) async {
-      // Inline the HTTP call — `RealQuestsRepository.syncTrackingBatch`
-      // would also work but pulling it in here would close the cycle
-      // questsRepositoryProvider → questTrackerProvider → questsRepositoryProvider.
       await api.dio.post<Map<String, dynamic>>(
         '/quests/$eventId/sync',
         data: {
@@ -163,13 +178,28 @@ final questTrackerProvider = Provider<QuestTracker>((ref) {
       );
     },
   );
+});
+
+/// Lifecycle-owning orchestrator. Constructed even in mock mode so the
+/// provider graph is consistent; the mock `QuestsRepository` ignores it.
+final questTrackerProvider = Provider<QuestTracker>((ref) {
   return QuestTracker(
     permissionFlow: const PermissionFlow(),
     locusTracker: LocusTracker(),
     geolocatorTracker: GeolocatorTracker(),
-    trackingDb: db,
-    trackingSync: sync,
+    trackingDb: ref.watch(trackingDbProvider),
+    trackingSync: ref.watch(trackingSyncProvider),
     eventsRepository: ref.watch(eventsRepositoryProvider),
+  );
+});
+
+/// One-shot drain service for tracker rows left over from a quest that
+/// ended without a network connection. Fired by `main.dart` after the
+/// auth token is loaded; runs in the background, never blocks boot.
+final bootDrainServiceProvider = Provider<BootDrainService>((ref) {
+  return BootDrainService(
+    db: ref.watch(trackingDbProvider),
+    sync: ref.watch(trackingSyncProvider),
   );
 });
 
