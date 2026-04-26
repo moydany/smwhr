@@ -39,5 +39,20 @@ end
 post_install do |installer|
   installer.pods_project.targets.each do |target|
     flutter_additional_ios_build_settings(target)
+
+    # permission_handler iOS macros. WITHOUT these, every
+    # `Permission.*.request()` call returns `permanentlyDenied`
+    # silently — no system sheet, no entry in Settings → smwhr.
+    # Each app must opt-in to exactly the permissions it asks for.
+    # See: https://pub.dev/packages/permission_handler#ios
+    target.build_configurations.each do |config|
+      config.build_settings['GCC_PREPROCESSOR_DEFINITIONS'] ||= [
+        '$(inherited)',
+        'PERMISSION_LOCATION=1',      # When-in-use + Always (intent + active quest)
+        'PERMISSION_CAMERA=1',        # In-app capture
+        'PERMISSION_SENSORS=1',       # Motion (battery savings on iOS)
+        'PERMISSION_NOTIFICATIONS=1', # Onboarding screen 04
+      ]
+    end
   end
 end
