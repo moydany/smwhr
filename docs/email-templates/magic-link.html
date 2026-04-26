@@ -1,0 +1,112 @@
+<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Transitional//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-transitional.dtd">
+<html xmlns="http://www.w3.org/1999/xhtml" lang="es">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <meta name="color-scheme" content="dark" />
+  <meta name="supported-color-schemes" content="dark" />
+  <title>smwhr — código de acceso</title>
+  <style type="text/css">
+    @import url('https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;700&family=Inter:wght@400;500&family=JetBrains+Mono:wght@500&display=swap');
+    body, table, td { margin: 0; padding: 0; }
+    img { border: 0; line-height: 100%; outline: none; text-decoration: none; }
+    a { color: #FF2D95; text-decoration: none; }
+    @media only screen and (max-width: 540px) {
+      .container { width: 100% !important; padding: 32px 20px !important; }
+      .code { font-size: 32px !important; letter-spacing: 8px !important; }
+      .wordmark { font-size: 36px !important; }
+    }
+  </style>
+</head>
+<body style="margin:0; padding:0; background-color:#050505; color:#FFFFFF; -webkit-font-smoothing:antialiased;">
+  <!-- Outer wrapper: full width, deep black -->
+  <table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" style="background-color:#050505;">
+    <tr>
+      <td align="center" style="padding: 56px 16px;">
+        <!-- Email-safe container -->
+        <table role="presentation" class="container" width="480" cellspacing="0" cellpadding="0" border="0" style="max-width:480px; width:100%;">
+
+          <!-- Header: pulse dot + wordmark -->
+          <tr>
+            <td align="left" style="padding-bottom: 48px;">
+              <table role="presentation" cellspacing="0" cellpadding="0" border="0">
+                <tr>
+                  <td valign="middle" style="padding-right: 10px;">
+                    <table role="presentation" cellspacing="0" cellpadding="0" border="0">
+                      <tr>
+                        <td width="6" height="6" style="width:6px; height:6px; background-color:#FF2D95; border-radius:50%; font-size:0; line-height:0;">&nbsp;</td>
+                      </tr>
+                    </table>
+                  </td>
+                  <td valign="middle" class="wordmark" style="font-family: 'Space Grotesk', -apple-system, BlinkMacSystemFont, sans-serif; font-size: 42px; font-weight: 700; letter-spacing: -2.1px; line-height: 1; color: #FF2D95;">
+                    smwhr
+                  </td>
+                </tr>
+              </table>
+            </td>
+          </tr>
+
+          <!-- Heading -->
+          <tr>
+            <td style="font-family: 'Space Grotesk', -apple-system, BlinkMacSystemFont, sans-serif; font-size: 28px; font-weight: 700; line-height: 1.15; letter-spacing: -0.7px; color:#FFFFFF; padding-bottom: 8px;">
+              Tu código de acceso
+            </td>
+          </tr>
+          <tr>
+            <td style="font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif; font-size: 15px; line-height: 1.5; color:#888888; padding-bottom: 32px;">
+              Pégalo en la app para entrar. No necesitas contraseña.
+            </td>
+          </tr>
+
+          <!-- Code card -->
+          <tr>
+            <td style="background-color:#111111; border:1px solid #2A2A2A; border-radius: 14px; padding: 28px 16px;" align="center">
+              <div class="code" style="font-family: 'JetBrains Mono', 'SF Mono', 'SFMono-Regular', Menlo, Consolas, monospace; font-size: 40px; font-weight: 500; letter-spacing: 14px; line-height: 1; color:#FFFFFF; padding-left: 14px;">{{ .Token }}</div>
+            </td>
+          </tr>
+
+          <!-- Meta line under the code -->
+          <tr>
+            <td align="center" style="padding: 14px 0 40px; font-family: 'JetBrains Mono', 'SF Mono', monospace; font-size: 11px; letter-spacing: 1.6px; line-height: 1; color:#555555; text-transform: uppercase;">
+              Vence en 60 min · un solo uso
+            </td>
+          </tr>
+
+          <!-- Hairline divider -->
+          <tr>
+            <td style="border-top: 1px solid #1E1E1E; font-size: 0; line-height: 0;">&nbsp;</td>
+          </tr>
+
+          <!-- Tagline -->
+          <tr>
+            <td style="padding: 32px 0 12px; font-family: 'Space Grotesk', -apple-system, BlinkMacSystemFont, sans-serif; font-size: 16px; font-weight: 500; line-height: 1.4; color:#FFFFFF;">
+              You were somewhere.
+            </td>
+          </tr>
+          <tr>
+            <td style="padding-bottom: 32px; font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif; font-size: 13px; line-height: 1.55; color:#666666;">
+              Verificamos físicamente que estuviste ahí. Una insignia, un serial, una memoria probada.
+            </td>
+          </tr>
+
+          <!-- Magic-link fallback (small, secondary) -->
+          <tr>
+            <td style="padding-bottom: 32px; font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif; font-size: 12px; line-height: 1.6; color:#555555;">
+              ¿Estás en el mismo dispositivo donde pediste el código?<br />
+              <a href="{{ .ConfirmationURL }}" style="color:#FF2D95; text-decoration:none;">Entra con un tap →</a>
+            </td>
+          </tr>
+
+          <!-- Footer disclaimer -->
+          <tr>
+            <td style="border-top: 1px solid #1E1E1E; padding-top: 24px; font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif; font-size: 11px; line-height: 1.6; color:#444444;">
+              Si no pediste este código, ignora este correo. Nadie más entrará con él.
+            </td>
+          </tr>
+
+        </table>
+      </td>
+    </tr>
+  </table>
+</body>
+</html>

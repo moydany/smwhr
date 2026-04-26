@@ -1,0 +1,13 @@
+smwhr — tu código de acceso
+
+{{ .Token }}
+
+Pégalo en la app para entrar. Vence en 60 minutos.
+No necesitas contraseña, este código es de un solo uso.
+
+You were somewhere.
+
+¿Mismo dispositivo? También puedes entrar con un tap:
+{{ .ConfirmationURL }}
+
+Si no pediste este código, ignora este correo. Nadie más entrará con él.
