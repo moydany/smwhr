@@ -47,17 +47,18 @@ class _ActiveQuestScreenState extends ConsumerState<ActiveQuestScreen> {
       if (!mounted) return;
       setState(() => _wallSeconds = (_wallSeconds + 1) % 60);
     });
-    // Boot the quest after first frame so the snapshot we read in
-    // build() reflects the active state immediately. In real mode this
-    // triggers permission prompts (Always location + motion); a denial
-    // surfaces as a `QuestPermissionException` we render in the UI.
+    // Boot the quest after first frame. We call startQuest
+    // unconditionally — `getQuestStatus().isActive` reflects the
+    // backend's event time-window phase, NOT local tracker state, so we
+    // can't use it to decide whether to skip. QuestTracker is idempotent
+    // for the same eventId; a re-mount during an in-flight quest no-ops.
+    // In real mode this triggers permission prompts (Always location +
+    // motion); a denial surfaces as a `QuestPermissionException` we
+    // render in the UI.
     WidgetsBinding.instance.addPostFrameCallback((_) async {
       try {
         final repo = ref.read(questsRepositoryProvider);
-        final current = await repo.getQuestStatus(widget.eventId);
-        if (!current.isActive) {
-          await repo.startQuest(widget.eventId);
-        }
+        await repo.startQuest(widget.eventId);
       } on QuestPermissionException catch (e) {
         if (!mounted) return;
         setState(() {

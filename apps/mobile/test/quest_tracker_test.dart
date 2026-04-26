@@ -160,6 +160,75 @@ void main() {
         throwsA(isA<QuestException>()),
       );
     });
+
+    test('is idempotent for the same eventId — second call does not '
+        're-prompt or re-start the trackers', () async {
+      final event = makeEvent();
+      final locus = _FakeLocusTracker();
+      final geolocator = _FakeGeolocatorTracker();
+      final db = TrackingDb();
+      var permPrompts = 0;
+      final perms = _CountingPermissionFlow(() => permPrompts++);
+      final sync = TrackingSync(
+        db: db,
+        syncFn: ({
+          required eventId,
+          required locusEvents,
+          required geolocatorPings,
+        }) async {},
+      );
+      final tracker = QuestTracker(
+        permissionFlow: perms,
+        locusTracker: locus,
+        geolocatorTracker: geolocator,
+        trackingDb: db,
+        trackingSync: sync,
+        eventsRepository: _FakeEventsRepository({event.id: event}),
+      );
+
+      await tracker.startQuest(event.id);
+      await tracker.startQuest(event.id);
+      await tracker.startQuest(event.id);
+
+      expect(permPrompts, 1, reason: 'perm only requested once');
+      expect(locus.startCount, 1);
+      expect(geolocator.startCount, 1);
+      expect(tracker.activeEventId, event.id);
+      expect(tracker.isRunning, isTrue);
+
+      await tracker.stopQuest(event.id);
+      expect(tracker.isRunning, isFalse);
+    });
+
+    test('throws when starting a different quest while one is in flight',
+        () async {
+      final eventA = makeEvent(id: 'a');
+      final eventB = makeEvent(id: 'b');
+      final db = TrackingDb();
+      final sync = TrackingSync(
+        db: db,
+        syncFn: ({
+          required eventId,
+          required locusEvents,
+          required geolocatorPings,
+        }) async {},
+      );
+      final tracker = QuestTracker(
+        permissionFlow: _GrantingPermissionFlow(),
+        locusTracker: _FakeLocusTracker(),
+        geolocatorTracker: _FakeGeolocatorTracker(),
+        trackingDb: db,
+        trackingSync: sync,
+        eventsRepository:
+            _FakeEventsRepository({eventA.id: eventA, eventB.id: eventB}),
+      );
+      await tracker.startQuest(eventA.id);
+      expect(
+        () => tracker.startQuest(eventB.id),
+        throwsA(isA<QuestException>()),
+      );
+      await tracker.stopQuest(eventA.id);
+    });
   });
 
   group('QuestTracker.stopQuest', () {
@@ -322,6 +391,17 @@ class _GrantingPermissionFlow extends PermissionFlow {
   @override
   Future<PermissionResult> requestForActiveQuest(Event event) async =>
       const PermissionResult(outcome: PermissionOutcome.granted);
+}
+
+class _CountingPermissionFlow extends PermissionFlow {
+  _CountingPermissionFlow(this.onRequest);
+  final void Function() onRequest;
+
+  @override
+  Future<PermissionResult> requestForActiveQuest(Event event) async {
+    onRequest();
+    return const PermissionResult(outcome: PermissionOutcome.granted);
+  }
 }
 
 class _DenyingPermissionFlow extends PermissionFlow {

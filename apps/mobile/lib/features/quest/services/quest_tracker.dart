@@ -34,7 +34,27 @@ class QuestTracker {
   final TrackingSync trackingSync;
   final EventsRepository eventsRepository;
 
+  String? _activeEventId;
+
+  /// `null` when no quest is in flight; otherwise the eventId of the
+  /// currently-tracking quest. Lets the active-quest screen safely call
+  /// [startQuest] on every mount without re-prompting for permissions
+  /// or double-starting the trackers.
+  String? get activeEventId => _activeEventId;
+  bool get isRunning => _activeEventId != null;
+
   Future<void> startQuest(String eventId) async {
+    // Idempotent for the active event. The screen calls startQuest
+    // unconditionally on mount because the backend's `isActive` flag
+    // reflects event time-window, NOT local tracker state — we can't
+    // use it to decide whether to skip.
+    if (_activeEventId == eventId) return;
+    if (_activeEventId != null) {
+      throw QuestException(
+        'Another quest is active for $_activeEventId. Stop it first.',
+      );
+    }
+
     final event = await eventsRepository.getEventById(eventId);
     if (event == null) {
       throw QuestException('Event $eventId not found');
@@ -60,13 +80,16 @@ class QuestTracker {
     );
 
     trackingSync.schedulePeriodic(eventId);
+    _activeEventId = eventId;
   }
 
   Future<void> stopQuest(String eventId) async {
+    if (_activeEventId != eventId) return;
     await locusTracker.stop();
     await geolocatorTracker.stop();
     await trackingSync.finalSync(eventId);
     await trackingDb.close(eventId);
+    _activeEventId = null;
   }
 }
 
