@@ -3,6 +3,7 @@ import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
+import '../../../core/router/app_router.dart';
 import '../../../core/theme/app_colors.dart';
 import '../../../core/theme/app_spacing.dart';
 import '../../../core/theme/app_typography.dart';
@@ -91,6 +92,26 @@ class _EventDetailBody extends ConsumerWidget {
                   ref.invalidate(_hasIntentProvider(event.id));
                 },
               ),
+              // Start quest CTA — only surfaces inside the event window
+              // for users who've already opted in. Outside the window
+              // (pre / post) the button stays hidden so we don't push
+              // people into a tracker that would just immediately mark
+              // them outside-of-time.
+              if (hasIntent && event.isLive) ...[
+                const SizedBox(height: AppSpacing.sm),
+                SmwhrButton(
+                  label: 'Start quest',
+                  leading: const Icon(
+                    Icons.bolt_rounded,
+                    size: 20,
+                    color: AppColors.textPrimary,
+                  ),
+                  onPressed: () {
+                    HapticFeedback.heavyImpact();
+                    context.push(AppRoutes.activeQuest(event.id));
+                  },
+                ),
+              ],
               const SizedBox(height: AppSpacing.md),
               _StatsRow(
                 going: intentCount,
