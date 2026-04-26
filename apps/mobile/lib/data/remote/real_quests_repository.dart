@@ -3,21 +3,25 @@ import 'dart:io';
 
 import 'package:dio/dio.dart';
 
+import '../../features/quest/services/quest_tracker.dart';
 import '../models/quest.dart';
 import '../repositories/quests_repository.dart';
 import 'api_client.dart';
 import 'mappers.dart';
+import 'quest_payloads.dart';
 
-/// Phase 2 subset — the API-callable methods (status / sync / photo /
-/// integrity) are wired; the on-device tracker lifecycle (start/stop +
-/// the live status stream that drives `active_quest_screen.dart`) stays
-/// stubbed until the Locus + Geolocator + Hive plumbing lands. Today none
-/// of the seeded events are inside the active window so this isn't a
-/// soft-launch blocker.
+/// Backend-facing implementation of [QuestsRepository].
+///
+/// HTTP calls (status / sync / photo / integrity) are owned here. The
+/// on-device tracker lifecycle (start/stop + Hive logging + periodic
+/// sync) is owned by [QuestTracker]; we delegate to it so the screen
+/// keeps calling `repo.startQuest(eventId)` without knowing whether
+/// we're in mock or real mode.
 class RealQuestsRepository implements QuestsRepository {
-  RealQuestsRepository(this._api);
+  RealQuestsRepository(this._api, {required this.questTracker});
 
   final ApiClient _api;
+  final QuestTracker questTracker;
 
   @override
   Future<QuestStatus> getQuestStatus(String eventId) async {
@@ -43,21 +47,10 @@ class RealQuestsRepository implements QuestsRepository {
   }
 
   @override
-  Future<void> startQuest(String eventId) async {
-    // The quest controller (Locus + Geolocator + Hive logging) is a
-    // mobile-only orchestrator — there's nothing to call on the backend
-    // here. Wired in the dual-track tracker integration session.
-    throw UnimplementedError(
-      'startQuest($eventId) — Phase 2 dual-track wiring (mobile-only).',
-    );
-  }
+  Future<void> startQuest(String eventId) => questTracker.startQuest(eventId);
 
   @override
-  Future<void> stopQuest(String eventId) async {
-    throw UnimplementedError(
-      'stopQuest($eventId) — Phase 2 dual-track teardown.',
-    );
-  }
+  Future<void> stopQuest(String eventId) => questTracker.stopQuest(eventId);
 
   @override
   Future<QuestStatus> uploadPhoto({
@@ -90,8 +83,8 @@ class RealQuestsRepository implements QuestsRepository {
     await _api.dio.post<Map<String, dynamic>>(
       '/quests/$eventId/sync',
       data: {
-        'locusEvents': locusEvents.map(_locusToJson).toList(),
-        'geolocatorPings': geolocatorPings.map(_pingToJson).toList(),
+        'locusEvents': locusEvents.map(locusEventToJson).toList(),
+        'geolocatorPings': geolocatorPings.map(geolocatorPingToJson).toList(),
         'clientTimestamp': DateTime.now().toIso8601String(),
       },
     );
@@ -108,29 +101,4 @@ class RealQuestsRepository implements QuestsRepository {
       },
     );
   }
-
-  Map<String, dynamic> _locusToJson(LocusEvent e) => {
-        'eventType': _locusEventTypeToBackend(e.type),
-        'latitude': e.latitude ?? 0,
-        'longitude': e.longitude ?? 0,
-        if (e.accuracy != null) 'accuracy': e.accuracy,
-        'timestamp': e.timestamp.toIso8601String(),
-        if (e.raw.isNotEmpty) 'rawPayload': e.raw,
-      };
-
-  Map<String, dynamic> _pingToJson(GeolocatorPing p) => {
-        'latitude': p.latitude,
-        'longitude': p.longitude,
-        'accuracy': p.accuracy,
-        'timestamp': p.timestamp.toIso8601String(),
-      };
-
-  String _locusEventTypeToBackend(LocusEventType t) => switch (t) {
-        LocusEventType.geofenceEnter => 'GEOFENCE_ENTER',
-        LocusEventType.geofenceExit => 'GEOFENCE_EXIT',
-        LocusEventType.geofenceDwell => 'LOCATION_UPDATE',
-        LocusEventType.locationUpdate => 'LOCATION_UPDATE',
-        LocusEventType.motionChange => 'MOTION_CHANGE',
-        LocusEventType.heartbeat => 'LOCATION_UPDATE',
-      };
 }

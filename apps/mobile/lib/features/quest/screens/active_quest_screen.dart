@@ -13,6 +13,8 @@ import '../../../data/models/event.dart';
 import '../../../data/models/quest.dart';
 import '../../../data/providers.dart';
 import '../../../shared/widgets/smwhr_button.dart';
+import '../providers/quest_state_provider.dart';
+import '../services/quest_tracker.dart';
 import '../widgets/quest_active_pill.dart';
 import '../widgets/quest_timer.dart';
 import '../widgets/verification_check_row.dart';
@@ -36,6 +38,7 @@ class ActiveQuestScreen extends ConsumerStatefulWidget {
 class _ActiveQuestScreenState extends ConsumerState<ActiveQuestScreen> {
   Timer? _wallTicker;
   int _wallSeconds = 0;
+  String? _startupError;
 
   @override
   void initState() {
@@ -44,13 +47,30 @@ class _ActiveQuestScreenState extends ConsumerState<ActiveQuestScreen> {
       if (!mounted) return;
       setState(() => _wallSeconds = (_wallSeconds + 1) % 60);
     });
-    // Boot the mock quest after first frame so the snapshot we read in
-    // build() reflects the active state immediately.
+    // Boot the quest after first frame so the snapshot we read in
+    // build() reflects the active state immediately. In real mode this
+    // triggers permission prompts (Always location + motion); a denial
+    // surfaces as a `QuestPermissionException` we render in the UI.
     WidgetsBinding.instance.addPostFrameCallback((_) async {
-      final repo = ref.read(questsRepositoryProvider);
-      final current = await repo.getQuestStatus(widget.eventId);
-      if (!current.isActive) {
-        await repo.startQuest(widget.eventId);
+      try {
+        final repo = ref.read(questsRepositoryProvider);
+        final current = await repo.getQuestStatus(widget.eventId);
+        if (!current.isActive) {
+          await repo.startQuest(widget.eventId);
+        }
+      } on QuestPermissionException catch (e) {
+        if (!mounted) return;
+        setState(() {
+          _startupError = e.result.shouldOpenSettings
+              ? 'Necesitamos permiso de ubicación. Ábrelo en Ajustes y vuelve.'
+              : 'Necesitamos permiso de ubicación para verificar el evento.';
+        });
+      } on QuestException catch (e) {
+        if (!mounted) return;
+        setState(() => _startupError = e.message);
+      } catch (e) {
+        if (!mounted) return;
+        setState(() => _startupError = 'No se pudo iniciar la quest: $e');
       }
     });
   }
@@ -63,8 +83,8 @@ class _ActiveQuestScreenState extends ConsumerState<ActiveQuestScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final eventAsync = ref.watch(_questEventProvider(widget.eventId));
-    final statusAsync = ref.watch(_questStatusProvider(widget.eventId));
+    final eventAsync = ref.watch(questEventProvider(widget.eventId));
+    final statusAsync = ref.watch(questStatusProvider(widget.eventId));
 
     return Scaffold(
       backgroundColor: AppColors.bg,
@@ -84,17 +104,20 @@ class _ActiveQuestScreenState extends ConsumerState<ActiveQuestScreen> {
                 orElse: _HeaderSkeleton.new,
               ),
               const SizedBox(height: AppSpacing.lg),
-              statusAsync.when(
-                loading: () => const _Loader(),
-                error: (e, _) => _ErrorBanner(message: e.toString()),
-                data: (status) => _Body(
-                  status: status,
-                  event: eventAsync.value,
-                  wallSeconds: _wallSeconds,
-                  onCapture: () =>
-                      _onCapture(context, ref, eventAsync.value),
+              if (_startupError != null)
+                _ErrorBanner(message: _startupError!)
+              else
+                statusAsync.when(
+                  loading: () => const _Loader(),
+                  error: (e, _) => _ErrorBanner(message: e.toString()),
+                  data: (status) => _Body(
+                    status: status,
+                    event: eventAsync.value,
+                    wallSeconds: _wallSeconds,
+                    onCapture: () =>
+                        _onCapture(context, ref, eventAsync.value),
+                  ),
                 ),
-              ),
             ],
           ),
         ),
@@ -306,16 +329,6 @@ class _ErrorBanner extends StatelessWidget {
   }
 }
 
-// ── Providers ──────────────────────────────────────────────────────
-
-final _questEventProvider =
-    FutureProvider.autoDispose.family<Event?, String>((ref, eventId) async {
-  final repo = ref.watch(eventsRepositoryProvider);
-  return repo.getEventById(eventId);
-});
-
-final _questStatusProvider =
-    StreamProvider.autoDispose.family<QuestStatus, String>((ref, eventId) {
-  final repo = ref.watch(questsRepositoryProvider);
-  return repo.watchQuestStatus(eventId);
-});
+// Providers moved to ../providers/quest_state_provider.dart so the
+// orchestrator (QuestTracker, the camera screen, share sheet, etc.) can
+// reuse them.

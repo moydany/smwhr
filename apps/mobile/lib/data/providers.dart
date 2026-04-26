@@ -1,6 +1,12 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../core/config/env.dart';
+import '../features/quest/services/geolocator_tracker.dart';
+import '../features/quest/services/locus_tracker.dart';
+import '../features/quest/services/permission_flow.dart';
+import '../features/quest/services/quest_tracker.dart';
+import '../features/quest/services/tracking_sync.dart';
+import 'local/tracking_db.dart';
 import 'mock/mock_auth_repository.dart';
 import 'mock/mock_badges_repository.dart';
 import 'mock/mock_events_repository.dart';
@@ -12,6 +18,7 @@ import 'remote/auth_token_store.dart';
 import 'remote/real_auth_repository.dart';
 import 'remote/real_badges_repository.dart';
 import 'remote/real_events_repository.dart';
+import 'remote/quest_payloads.dart';
 import 'remote/real_quests_repository.dart';
 import 'remote/real_users_repository.dart';
 import 'repositories/auth_repository.dart';
@@ -117,7 +124,53 @@ final questsRepositoryProvider = Provider<QuestsRepository>((ref) {
     ref.onDispose(repo.dispose);
     return repo;
   }
-  return RealQuestsRepository(ref.watch(apiClientProvider));
+  return RealQuestsRepository(
+    ref.watch(apiClientProvider),
+    questTracker: ref.watch(questTrackerProvider),
+  );
+});
+
+// ── Quest dual-track wiring (real mode only) ───────────────────────────
+
+/// On-device Hive store for the dual-track tracker. Singleton per app
+/// session — opened/closed per active quest by `QuestTracker`.
+final trackingDbProvider = Provider<TrackingDb>((ref) => TrackingDb());
+
+/// Lifecycle-owning orchestrator. Constructed even in mock mode so the
+/// provider graph is consistent; the mock `QuestsRepository` ignores it.
+final questTrackerProvider = Provider<QuestTracker>((ref) {
+  final api = ref.watch(apiClientProvider);
+  final db = ref.watch(trackingDbProvider);
+  final sync = TrackingSync(
+    db: db,
+    syncFn: ({
+      required String eventId,
+      required locusEvents,
+      required geolocatorPings,
+    }) async {
+      // Inline the HTTP call — `RealQuestsRepository.syncTrackingBatch`
+      // would also work but pulling it in here would close the cycle
+      // questsRepositoryProvider → questTrackerProvider → questsRepositoryProvider.
+      await api.dio.post<Map<String, dynamic>>(
+        '/quests/$eventId/sync',
+        data: {
+          'locusEvents':
+              locusEvents.map((e) => locusEventToJson(e)).toList(),
+          'geolocatorPings':
+              geolocatorPings.map((p) => geolocatorPingToJson(p)).toList(),
+          'clientTimestamp': DateTime.now().toIso8601String(),
+        },
+      );
+    },
+  );
+  return QuestTracker(
+    permissionFlow: const PermissionFlow(),
+    locusTracker: LocusTracker(),
+    geolocatorTracker: GeolocatorTracker(),
+    trackingDb: db,
+    trackingSync: sync,
+    eventsRepository: ref.watch(eventsRepositoryProvider),
+  );
 });
 
 final badgesRepositoryProvider = Provider<BadgesRepository>((ref) {
