@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
+import 'package:permission_handler/permission_handler.dart' show openAppSettings;
 
 import '../../../core/router/app_router.dart';
 import '../../../core/theme/app_colors.dart';
@@ -39,6 +40,7 @@ class _ActiveQuestScreenState extends ConsumerState<ActiveQuestScreen> {
   Timer? _wallTicker;
   int _wallSeconds = 0;
   String? _startupError;
+  bool _canOpenSettings = false;
 
   @override
   void initState() {
@@ -47,33 +49,42 @@ class _ActiveQuestScreenState extends ConsumerState<ActiveQuestScreen> {
       if (!mounted) return;
       setState(() => _wallSeconds = (_wallSeconds + 1) % 60);
     });
-    // Boot the quest after first frame. We call startQuest
-    // unconditionally — `getQuestStatus().isActive` reflects the
-    // backend's event time-window phase, NOT local tracker state, so we
-    // can't use it to decide whether to skip. QuestTracker is idempotent
-    // for the same eventId; a re-mount during an in-flight quest no-ops.
-    // In real mode this triggers permission prompts (Always location +
-    // motion); a denial surfaces as a `QuestPermissionException` we
-    // render in the UI.
-    WidgetsBinding.instance.addPostFrameCallback((_) async {
-      try {
-        final repo = ref.read(questsRepositoryProvider);
-        await repo.startQuest(widget.eventId);
-      } on QuestPermissionException catch (e) {
-        if (!mounted) return;
-        setState(() {
-          _startupError = e.result.shouldOpenSettings
-              ? 'Necesitamos permiso de ubicación. Ábrelo en Ajustes y vuelve.'
-              : 'Necesitamos permiso de ubicación para verificar el evento.';
-        });
-      } on QuestException catch (e) {
-        if (!mounted) return;
-        setState(() => _startupError = e.message);
-      } catch (e) {
-        if (!mounted) return;
-        setState(() => _startupError = 'No se pudo iniciar la quest: $e');
-      }
-    });
+    _bootQuest();
+  }
+
+  /// Idempotent — `QuestTracker.startQuest` no-ops on the same eventId.
+  /// We re-call it from the "Try again" CTA after the user grants
+  /// permission in Settings + comes back to the app.
+  Future<void> _bootQuest() async {
+    try {
+      final repo = ref.read(questsRepositoryProvider);
+      await repo.startQuest(widget.eventId);
+      if (!mounted) return;
+      setState(() {
+        _startupError = null;
+        _canOpenSettings = false;
+      });
+    } on QuestPermissionException catch (e) {
+      if (!mounted) return;
+      setState(() {
+        _canOpenSettings = e.result.shouldOpenSettings;
+        _startupError = e.result.shouldOpenSettings
+            ? 'Necesitamos permiso de ubicación. Ábrelo en Ajustes y vuelve.'
+            : 'Necesitamos permiso de ubicación para verificar el evento.';
+      });
+    } on QuestException catch (e) {
+      if (!mounted) return;
+      setState(() {
+        _startupError = e.message;
+        _canOpenSettings = false;
+      });
+    } catch (e) {
+      if (!mounted) return;
+      setState(() {
+        _startupError = 'No se pudo iniciar la quest: $e';
+        _canOpenSettings = false;
+      });
+    }
   }
 
   @override
@@ -106,7 +117,11 @@ class _ActiveQuestScreenState extends ConsumerState<ActiveQuestScreen> {
               ),
               const SizedBox(height: AppSpacing.lg),
               if (_startupError != null)
-                _ErrorBanner(message: _startupError!)
+                _StartupErrorPanel(
+                  message: _startupError!,
+                  onOpenSettings: _canOpenSettings ? openAppSettings : null,
+                  onRetry: _bootQuest,
+                )
               else
                 statusAsync.when(
                   loading: () => const _Loader(),
@@ -325,6 +340,69 @@ class _ErrorBanner extends StatelessWidget {
       child: Text(
         message,
         style: AppTypography.bodySmall.copyWith(color: AppColors.error),
+      ),
+    );
+  }
+}
+
+/// Error banner with action buttons — used at boot when startQuest
+/// fails. "Abrir Ajustes" deep-links to the iOS Settings app for the
+/// most common case (perm permanently denied); "Reintentar" calls
+/// startQuest again so the user doesn't have to back out + tap Start
+/// quest a second time after granting in Settings.
+class _StartupErrorPanel extends StatelessWidget {
+  final String message;
+  final VoidCallback? onOpenSettings;
+  final VoidCallback onRetry;
+
+  const _StartupErrorPanel({
+    required this.message,
+    required this.onOpenSettings,
+    required this.onRetry,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.all(AppSpacing.md),
+      decoration: BoxDecoration(
+        color: AppColors.errorBackground,
+        border: Border.all(color: AppColors.errorMuted),
+        borderRadius: BorderRadius.circular(AppSpacing.radiusButton),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Text(
+            message,
+            style: AppTypography.bodySmall.copyWith(color: AppColors.error),
+          ),
+          const SizedBox(height: AppSpacing.sm),
+          Row(
+            children: [
+              if (onOpenSettings != null) ...[
+                Expanded(
+                  child: SmwhrButton(
+                    label: 'Abrir Ajustes',
+                    variant: SmwhrButtonVariant.primary,
+                    onPressed: onOpenSettings,
+                  ),
+                ),
+                const SizedBox(width: AppSpacing.sm),
+              ],
+              Expanded(
+                child: SmwhrButton(
+                  label: 'Reintentar',
+                  variant: onOpenSettings != null
+                      ? SmwhrButtonVariant.outline
+                      : SmwhrButtonVariant.primary,
+                  onPressed: onRetry,
+                ),
+              ),
+            ],
+          ),
+        ],
       ),
     );
   }
