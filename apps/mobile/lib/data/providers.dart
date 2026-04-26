@@ -167,6 +167,7 @@ final trackingSyncProvider = Provider<TrackingSync>((ref) {
   final db = ref.watch(trackingDbProvider);
   return TrackingSync(
     db: db,
+    defaultInterval: Duration(seconds: Env.questSyncIntervalSeconds),
     syncFn: ({
       required String eventId,
       required locusEvents,

@@ -43,4 +43,15 @@ class Env {
   ///     flutter run --dart-define=BOOT_AT=/onboarding/identity
   static const String bootAt =
       String.fromEnvironment('BOOT_AT', defaultValue: '');
+
+  /// Quest tracker sync cadence (seconds). Production: 30 min (locked
+  /// decision #4). For dev / smoke testing against the
+  /// `prueba-tulancingo-hq` event with a 5-min dwell, drop to 15-30s
+  /// so the bar visibly fills:
+  ///
+  ///     flutter run --dart-define=QUEST_SYNC_INTERVAL_SECONDS=15
+  static const int questSyncIntervalSeconds = int.fromEnvironment(
+    'QUEST_SYNC_INTERVAL_SECONDS',
+    defaultValue: 1800,
+  );
 }

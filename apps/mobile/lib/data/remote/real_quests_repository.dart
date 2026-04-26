@@ -49,7 +49,21 @@ class RealQuestsRepository implements QuestsRepository {
   }
 
   @override
-  Future<void> startQuest(String eventId) => questTracker.startQuest(eventId);
+  Future<void> startQuest(String eventId) async {
+    await questTracker.startQuest(eventId);
+    // Stub integrity attestation. Real DeviceCheck (iOS) / Play
+    // Integrity (Android) tokens land post-launch — for R0.1 the
+    // backend records `pending_verification` as the verdict for any
+    // non-null token, and the mobile mapper flips
+    // `deviceTrusted + integrityActive` true on the active-quest screen.
+    // Non-blocking: a failure here doesn't stop the tracker.
+    try {
+      await attestIntegrity(
+        eventId,
+        'dev-stub-${Platform.isIOS ? 'ios' : 'android'}',
+      );
+    } catch (_) {/* swallow — integrity is best-effort in R0.1 */}
+  }
 
   @override
   Future<void> stopQuest(String eventId) => questTracker.stopQuest(eventId);

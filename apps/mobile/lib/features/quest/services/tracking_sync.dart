@@ -26,23 +26,32 @@ class TrackingSync {
   TrackingSync({
     required TrackingDb db,
     required SyncBatchFn syncFn,
+    Duration? defaultInterval,
   })  : _db = db,
-        _syncFn = syncFn;
+        _syncFn = syncFn,
+        _defaultInterval = defaultInterval ?? const Duration(minutes: 30);
 
-  static const Duration defaultInterval = Duration(minutes: 30);
+  /// Production cadence per locked decision #4. The provider in
+  /// `data/providers.dart` overrides this from `Env.questSyncIntervalSeconds`
+  /// for dev / smoke testing.
+  static const Duration productionInterval = Duration(minutes: 30);
 
   final TrackingDb _db;
   final SyncBatchFn _syncFn;
+  final Duration _defaultInterval;
   final Map<String, Timer> _timers = {};
 
   /// Arms a `Timer.periodic` that calls [syncBatch] every [interval].
-  /// Replaces any existing timer for [eventId].
+  /// Replaces any existing timer for [eventId]. When [interval] is omitted,
+  /// uses the instance's [_defaultInterval] (set at construction time
+  /// from `Env.questSyncIntervalSeconds`).
   void schedulePeriodic(
     String eventId, {
-    Duration interval = defaultInterval,
+    Duration? interval,
   }) {
+    final effective = interval ?? _defaultInterval;
     _timers[eventId]?.cancel();
-    _timers[eventId] = Timer.periodic(interval, (_) {
+    _timers[eventId] = Timer.periodic(effective, (_) {
       // Fire-and-forget; errors are handled inside syncBatch.
       syncBatch(eventId);
     });
