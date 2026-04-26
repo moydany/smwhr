@@ -1,9 +1,11 @@
 import 'dart:async';
+import 'dart:convert';
 import 'dart:io';
 
 import 'package:dio/dio.dart';
 
 import '../../features/quest/services/quest_tracker.dart';
+import '../models/photo_upload.dart';
 import '../models/quest.dart';
 import '../repositories/quests_repository.dart';
 import 'api_client.dart';
@@ -53,16 +55,25 @@ class RealQuestsRepository implements QuestsRepository {
   Future<void> stopQuest(String eventId) => questTracker.stopQuest(eventId);
 
   @override
-  Future<QuestStatus> uploadPhoto({
+  Future<PhotoUploadResult> uploadPhoto({
     required String eventId,
     required File photo,
+    PhotoMetadata? metadata,
   }) async {
     final form = FormData.fromMap({
       'file': await MultipartFile.fromFile(photo.path),
-      // EXIF metadata is supplied by the QuestTracker / camera service. The
-      // ApiClient call site can extend the FormData when those land.
+      if (metadata?.exifTimestamp != null)
+        'exifTimestamp': metadata!.exifTimestamp!.toIso8601String(),
+      if (metadata?.exifLatitude != null)
+        'exifLatitude': metadata!.exifLatitude!.toString(),
+      if (metadata?.exifLongitude != null)
+        'exifLongitude': metadata!.exifLongitude!.toString(),
+      if (metadata?.exifRaw != null && metadata!.exifRaw!.isNotEmpty)
+        // Backend's UploadPhotoDto expects exifRaw as JSON string in the
+        // multipart body (it's then parsed server-side into Json).
+        'exifRaw': jsonEncode(metadata.exifRaw),
     });
-    await _api.dio.post<Map<String, dynamic>>(
+    final res = await _api.dio.post<Map<String, dynamic>>(
       '/quests/$eventId/photo',
       data: form,
       options: Options(
@@ -71,7 +82,7 @@ class RealQuestsRepository implements QuestsRepository {
         receiveTimeout: const Duration(seconds: 60),
       ),
     );
-    return getQuestStatus(eventId);
+    return PhotoUploadResult.fromJson(res.data!);
   }
 
   @override

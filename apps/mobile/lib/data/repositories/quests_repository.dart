@@ -1,5 +1,6 @@
 import 'dart:io';
 
+import '../models/photo_upload.dart';
 import '../models/quest.dart';
 
 abstract class QuestsRepository {
@@ -11,11 +12,15 @@ abstract class QuestsRepository {
   Future<void> startQuest(String eventId);
   Future<void> stopQuest(String eventId);
 
-  /// Upload the captured photo + EXIF metadata. Returns updated status
-  /// with `checks.photoCapture = true`.
-  Future<QuestStatus> uploadPhoto({
+  /// Upload the captured photo + optional EXIF metadata. Returns the
+  /// backend's verification verdict (per-check booleans + photo id).
+  /// The reveal screen renders a soft warning if any check fails — the
+  /// upload itself still succeeds and the badge gets issued at
+  /// finalize-time, just with a lower score.
+  Future<PhotoUploadResult> uploadPhoto({
     required String eventId,
     required File photo,
+    PhotoMetadata? metadata,
   });
 
   /// Forward a tracking batch to the backend. No-op in mock mode.

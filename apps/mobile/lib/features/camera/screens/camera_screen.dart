@@ -14,8 +14,10 @@ import '../../../core/theme/app_colors.dart';
 import '../../../core/theme/app_spacing.dart';
 import '../../../core/theme/app_typography.dart';
 import '../../../data/models/event.dart';
+import '../../../data/models/photo_upload.dart';
 import '../../../data/providers.dart';
 import '../../../shared/widgets/smwhr_ambient_background.dart';
+import '../services/exif_reader.dart';
 import '../widgets/badge_frame_overlay.dart';
 import '../widgets/shutter_button.dart';
 
@@ -165,22 +167,58 @@ class _CameraScreenState extends ConsumerState<CameraScreen>
     }
 
     final fileToUpload = captured ?? _shimFile(event.id);
+    final metadata = captured != null
+        ? await const ExifReader().read(captured)
+        : const PhotoMetadata();
+
     final repo = ref.read(questsRepositoryProvider);
+    PhotoUploadResult? result;
     try {
-      await repo.uploadPhoto(eventId: event.id, photo: fileToUpload);
+      result = await repo.uploadPhoto(
+        eventId: event.id,
+        photo: fileToUpload,
+        metadata: metadata,
+      );
     } catch (_) {
-      // Soft-fail: surface in reveal screen if needed. EXIF + retry
-      // queue lands in Session 6 / post-launch follow-up.
+      // Soft-fail: photo couldn't reach the backend (offline, server
+      // 5xx). The reveal still progresses; backend reconciliation will
+      // pick up whatever data made it (locus + pings, possibly without
+      // the photo).
     }
 
     if (!mounted) return;
     setState(() => _capturing = false);
 
+    if (result != null && result.hasWarning) {
+      _showVerificationWarning(result);
+    }
+
     // Reveal screen receives a deterministic mock badge id while we
-    // wait for the backend's finalize → badge issuance to land in real
-    // mode. Session 6 wires the real badge id from the photo upload
-    // response.
+    // wait for the backend's finalize → badge issuance to land. The
+    // photoId from the upload response isn't a badge id; the badge
+    // gets minted later by `/quests/:id/finalize`.
     context.go(AppRoutes.reveal('bdg-001'));
+  }
+
+  void _showVerificationWarning(PhotoUploadResult result) {
+    final issues = <String>[];
+    if (!result.isExifValid) issues.add('EXIF incompleto');
+    if (!result.isWithinTimeWindow) issues.add('fuera de la ventana del evento');
+    if (!result.isInsideGeofence) issues.add('fuera del polígono');
+    final messenger = ScaffoldMessenger.maybeOf(context);
+    messenger?.showSnackBar(
+      SnackBar(
+        backgroundColor: AppColors.surface,
+        duration: const Duration(seconds: 6),
+        content: Text(
+          'Foto subida con observaciones: ${issues.join(', ')}. '
+          'Tu insignia se emitirá con score reducido.',
+          style: AppTypography.bodySmall.copyWith(
+            color: AppColors.textPrimary,
+          ),
+        ),
+      ),
+    );
   }
 
   Future<File> _moveToEventDir(File source, String eventId) async {

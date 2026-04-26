@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:io';
 
+import '../models/photo_upload.dart';
 import '../models/quest.dart';
 import '../repositories/quests_repository.dart';
 import 'mock_latency.dart';
@@ -49,14 +50,22 @@ class MockQuestsRepository implements QuestsRepository {
   }
 
   @override
-  Future<QuestStatus> uploadPhoto({
+  Future<PhotoUploadResult> uploadPhoto({
     required String eventId,
     required File photo,
+    PhotoMetadata? metadata,
   }) async {
     // Heavier latency — feels like a real upload.
     await Future<void>.delayed(const Duration(milliseconds: 1500));
     _runtime(eventId).flipPhotoCapture();
-    return _runtime(eventId).status;
+    // Mock always returns "all good" — exercising the soft-warning path
+    // requires the real backend's PostGIS check.
+    return PhotoUploadResult(
+      photoId: 'mock-photo-$eventId',
+      isExifValid: true,
+      isWithinTimeWindow: true,
+      isInsideGeofence: true,
+    );
   }
 
   @override

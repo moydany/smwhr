@@ -49,6 +49,14 @@ class LocusTracker {
       heartbeatInterval: 60,
       stopOnTerminate: false,
       startOnBoot: true,
+      // Android foreground-service notification copy. Pinned ES so the
+      // user always sees the same message when the persistent
+      // notification appears while a quest is active.
+      notification: NotificationConfig(
+        title: 'smwhr',
+        text: 'Verificando tu quest. Te avisamos cuando termine.',
+        importance: 2, // default — visible but not noisy
+      ),
     ));
 
     if (polygon.length >= 3) {
