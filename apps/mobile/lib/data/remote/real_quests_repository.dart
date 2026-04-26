@@ -1,5 +1,4 @@
 import 'dart:async';
-import 'dart:convert';
 import 'dart:io';
 
 import 'package:dio/dio.dart';
@@ -82,10 +81,12 @@ class RealQuestsRepository implements QuestsRepository {
         'exifLatitude': metadata!.exifLatitude!.toString(),
       if (metadata?.exifLongitude != null)
         'exifLongitude': metadata!.exifLongitude!.toString(),
-      if (metadata?.exifRaw != null && metadata!.exifRaw!.isNotEmpty)
-        // Backend's UploadPhotoDto expects exifRaw as JSON string in the
-        // multipart body (it's then parsed server-side into Json).
-        'exifRaw': jsonEncode(metadata.exifRaw),
+      // exifRaw is omitted intentionally: the backend's
+      // UploadPhotoMetadataDto types it as `@IsObject()`, which rejects
+      // any string — and multipart can't carry nested JSON natively.
+      // The three top-level fields above are what the verifier actually
+      // scores; the raw blob is only useful post-launch for forensic
+      // anti-spoofing heuristics.
     });
     final res = await _api.dio.post<Map<String, dynamic>>(
       '/quests/$eventId/photo',

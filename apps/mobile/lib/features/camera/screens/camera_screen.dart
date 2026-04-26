@@ -173,21 +173,37 @@ class _CameraScreenState extends ConsumerState<CameraScreen>
 
     final repo = ref.read(questsRepositoryProvider);
     PhotoUploadResult? result;
+    String? uploadError;
     try {
       result = await repo.uploadPhoto(
         eventId: event.id,
         photo: fileToUpload,
         metadata: metadata,
       );
-    } catch (_) {
-      // Soft-fail: photo couldn't reach the backend (offline, server
-      // 5xx). The reveal still progresses; backend reconciliation will
-      // pick up whatever data made it (locus + pings, possibly without
-      // the photo).
+    } catch (e) {
+      // Surface the failure so we can diagnose. Without this the user
+      // would land on the active quest screen with the photoCapture
+      // check still off and no idea why.
+      uploadError = e.toString();
     }
 
     if (!mounted) return;
     setState(() => _capturing = false);
+
+    if (uploadError != null) {
+      ScaffoldMessenger.maybeOf(context)?.showSnackBar(
+        SnackBar(
+          backgroundColor: AppColors.errorBackground,
+          duration: const Duration(seconds: 8),
+          content: Text(
+            'No se pudo subir la foto: $uploadError',
+            style: AppTypography.bodySmall.copyWith(color: AppColors.error),
+          ),
+        ),
+      );
+      context.pop();
+      return;
+    }
 
     if (result != null && result.hasWarning) {
       _showVerificationWarning(result);
