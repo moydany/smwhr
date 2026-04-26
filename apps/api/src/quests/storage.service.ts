@@ -24,6 +24,10 @@ export class StorageService {
     const path = `${userId}/${eventId}/${photoId}${ext}`;
     const bucket = 'photos';
 
+    this.logger.log(
+      `upload diag bucket=${bucket} path=${path} mime=${file.mimetype} size=${file.buffer.length}B`,
+    );
+
     const { error } = await this.supabase.admin.storage
       .from(bucket)
       .upload(path, file.buffer, {

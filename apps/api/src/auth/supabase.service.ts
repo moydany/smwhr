@@ -21,7 +21,29 @@ export class SupabaseService implements OnModuleInit {
     this._anon = createClient(url, anonKey, {
       auth: { autoRefreshToken: false, persistSession: false },
     });
-    this.logger.log('Supabase admin + anon clients ready');
+    // Diagnostic: log the role claim of each loaded JWT and the last
+    // 8 chars of the key so we can confirm the running process picked
+    // up the right env at boot. If this prints `role=anon` for the
+    // admin client, RLS will reject every storage write — the .env
+    // wiring is wrong even though the file looks correct.
+    this.logger.log(
+      `Supabase ready url=${url} ` +
+        `admin=${this._roleClaim(serviceKey)}/${serviceKey.slice(-8)} ` +
+        `anon=${this._roleClaim(anonKey)}/${anonKey.slice(-8)}`,
+    );
+  }
+
+  private _roleClaim(jwt: string): string {
+    try {
+      const payload = jwt.split('.')[1];
+      if (!payload) return 'unparseable';
+      const decoded = JSON.parse(
+        Buffer.from(payload, 'base64').toString('utf8'),
+      );
+      return String(decoded?.role ?? 'no-role');
+    } catch {
+      return 'unparseable';
+    }
   }
 
   get admin(): SupabaseClient {
