@@ -63,9 +63,28 @@ class PermissionFlow {
   /// Step 3. Asks for background location ("Always") + motion. Called
   /// after the user has opted into the quest from inside the venue
   /// window — the highest-acceptance moment per the playbook.
+  ///
+  /// iOS requires a strict 2-step escalation: you can only request
+  /// `locationAlways` AFTER `locationWhenInUse` is granted. Skipping
+  /// straight to Always raises
+  /// `PlatformException(MISSING_WHENINUSE_PERMISSION)`. We always
+  /// re-check + request when-in-use first, then ask for the upgrade.
+  /// On Android both flags are colloquial — `locationAlways.request()`
+  /// triggers the right system dialog directly — so the extra check is
+  /// harmless (returns granted immediately if already granted).
   Future<PermissionResult> requestForActiveQuest(Event event) async {
-    final locationStatus = await Permission.locationAlways.request();
-    final locationResult = _mapLocation(locationStatus, escalating: true);
+    // Step 3a — when-in-use. iOS shows the standard "While Using" sheet.
+    final whenInUseStatus = await Permission.locationWhenInUse.request();
+    if (!whenInUseStatus.isGranted && !whenInUseStatus.isLimited) {
+      return _mapLocation(whenInUseStatus, escalating: false);
+    }
+
+    // Step 3b — escalate to always. iOS now shows the second sheet
+    // ("Allow even when not using"). On a fresh first run the two
+    // sheets fire back-to-back; on subsequent runs only the missing
+    // step fires.
+    final alwaysStatus = await Permission.locationAlways.request();
+    final locationResult = _mapLocation(alwaysStatus, escalating: true);
 
     // Motion is iOS-only effectively (Android's ACTIVITY_RECOGNITION is
     // declared by the locus plugin); a denial here doesn't block tracking
