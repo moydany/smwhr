@@ -28,15 +28,23 @@ class RealAuthRepository implements AuthRepository {
   AuthState _currentState = const AuthSignedOut();
 
   void _hydrateFromStore() {
-    final cached = _store.cachedUser;
     final session = _store.session;
-    if (cached != null && session != null) {
-      _emit(AuthSignedIn(cached));
-      // Refresh /me in the background so a stale cached user gets corrected.
-      unawaited(_refreshMe());
-    } else {
+    if (session == null) {
       _emit(const AuthSignedOut());
+      return;
     }
+    final cached = _store.cachedUser;
+    if (cached != null) {
+      // Best UX path: show cached user immediately, refresh in
+      // background so a stale profile or revoked session gets fixed
+      // without blocking the first frame.
+      _emit(AuthSignedIn(cached));
+    } else {
+      // Session exists but no cached user (rare — verify saved the
+      // session then /me failed). Show authenticating until /me lands.
+      _emit(const AuthAuthenticating());
+    }
+    unawaited(_refreshMe());
   }
 
   void _emit(AuthState s) {
