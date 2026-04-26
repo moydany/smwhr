@@ -14,7 +14,12 @@ Living index of every sprint plan executed against `apps/api`, `apps/mobile`, or
 
 | Date | Status | Scope | Plan |
 |------|--------|-------|------|
-| 2026-04-24 | 🟡 active | mobile | [Mobile R0.1 — Frontend-First Implementation](./2026-04-24-mobile-r01-frontend-first.md) |
+| 2026-04-25 | 🟡 active | mobile | [Mobile Quest Active — Dual-track tracker + Camera + EXIF + Permissions](./2026-04-25-mobile-quest-active.md) |
+| 2026-04-25 | ✅ shipped | mobile,api | [Phase 2 Cutover — Mocks → Real Backend](./2026-04-25-phase2-cutover.md) |
+| 2026-04-25 | 🟡 active | mobile | [R0.1 Manual QA Checklist](./2026-04-25-r01-manual-qa-checklist.md) |
+| 2026-04-25 | ✅ shipped | mobile | [R0.1 Mobile — Frontend-First Handoff](./2026-04-25-r01-handoff.md) |
+| 2026-04-25 | ✅ shipped | api | [R0.1 Backend — Phase 2 Handoff](./2026-04-25-backend-phase2-handoff.md) |
+| 2026-04-24 | ✅ shipped | mobile | [Mobile R0.1 — Frontend-First Implementation](./2026-04-24-mobile-r01-frontend-first.md) |
 
 ## Process
 

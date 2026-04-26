@@ -9,6 +9,15 @@ deployable NestJS API serving the entire R0.1 mobile contract, plus
 PostGIS geofence verification, audit logging, and a notification stub
 ready for the FCM/APNs swap.
 
+**Mobile cutover landed the same day.** The Flutter app's 5
+`Real*Repository` impls are wired against this backend (commits
+5608e2b → 8a4f8c7). The contract was verified live through email-OTP
+signup, onboarding, browse, intent toggle, profile, and waitlist. The
+active-quest pipeline (`/quests/:id/sync`, `/photo`, `/integrity`,
+`/finalize`, `/status`) is shipped on the backend; the mobile-side
+tracker + camera + EXIF + permission flow is sequenced in
+[2026-04-25-mobile-quest-active.md](./2026-04-25-mobile-quest-active.md).
+
 ---
 
 ## TL;DR
