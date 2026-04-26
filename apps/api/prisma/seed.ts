@@ -38,6 +38,9 @@ const VENUES: Record<string, VenueLoc> = {
   tepozteco: { lat: 18.9885, lng: -99.1014 },
   guanajuatoCentro: { lat: 21.0190, lng: -101.2574, delta: 0.01 },
   auditorioTelmex: { lat: 20.7237, lng: -103.4007 },
+  // Test venues for the active-quest sprint (Tulancingo HQ + Estadio Harp Helú).
+  franzBehr103: { lat: 20.0705988, lng: -98.3763053, delta: 0.001 },
+  estadioHarpHelu: { lat: 19.4033566, lng: -99.0843454, delta: 0.0025 },
 };
 
 function buildPolygonWkt(loc: VenueLoc): string {
@@ -176,7 +179,17 @@ interface FutureEvent {
 }
 
 async function seedFutureEvents() {
+  // Test event "today" — wide window, short dwell so the active-quest
+  // smoke runs in minutes. Pinned featured so it's easy to find on the
+  // home feed during testing.
+  const todayStart = new Date();
+  todayStart.setHours(0, 0, 0, 0);
+  const todayEnd = new Date();
+  todayEnd.setHours(23, 59, 59, 0);
+
   const events: FutureEvent[] = [
+    { slug: 'prueba-tulancingo-hq', title: 'Prueba · HQ Tulancingo', venueName: 'Franz Behr 103', city: 'Tulancingo', category: 'culture', startsAt: todayStart, endsAt: todayEnd, dwellMin: 5, isFeatured: true, intentCount: 0, description: 'Evento de prueba para validar el dual-track tracker. Ventana abierta todo el día, dwell de 5 minutos.', heroColor: '#9D2DFF', venue: VENUES.franzBehr103 },
+    { slug: 'padres-diamondbacks-harp-helu-2026-04-26', title: 'Padres vs Diamondbacks', artist: 'MLB Mexico City Series', venueName: 'Estadio Alfredo Harp Helú', city: 'Ciudad de México', category: 'sports', startsAt: new Date('2026-04-26T19:00:00-06:00'), endsAt: new Date('2026-04-26T22:30:00-06:00'), dwellMin: 60, isFeatured: true, intentCount: 4200, description: 'San Diego visita la CDMX. Tres horas de béisbol bajo techo en el Harp Helú.', heroColor: '#2DFF95', venue: VENUES.estadioHarpHelu },
     { slug: 'bts-mexico-2026-n1', title: 'BTS World Tour · Noche 1', artist: 'BTS', venueName: 'Estadio GNP Seguros', city: 'Ciudad de México', category: 'music', startsAt: new Date('2026-05-07T20:30:00-06:00'), endsAt: new Date('2026-05-07T23:30:00-06:00'), dwellMin: 45, isFeatured: true, intentCount: 8420, description: 'La primera de tres noches que cambian todo. ARMY mexicano por fin recibe a los siete.', heroColor: '#FF2D95', venue: VENUES.gnpSeguros },
     { slug: 'bts-mexico-2026-n2', title: 'BTS World Tour · Noche 2', artist: 'BTS', venueName: 'Estadio GNP Seguros', city: 'Ciudad de México', category: 'music', startsAt: new Date('2026-05-09T20:30:00-06:00'), endsAt: new Date('2026-05-09T23:30:00-06:00'), dwellMin: 45, isFeatured: true, intentCount: 7910, description: 'Segunda noche. La que definitivamente vas a recordar.', heroColor: '#FF2D95', venue: VENUES.gnpSeguros },
     { slug: 'bts-mexico-2026-n3', title: 'BTS World Tour · Noche 3', artist: 'BTS', venueName: 'Estadio GNP Seguros', city: 'Ciudad de México', category: 'music', startsAt: new Date('2026-05-10T20:30:00-06:00'), endsAt: new Date('2026-05-10T23:30:00-06:00'), dwellMin: 45, isFeatured: true, intentCount: 8120, description: 'La última. Todo lo que se lloró se llora. Encore.', heroColor: '#FF2D95', venue: VENUES.gnpSeguros },
