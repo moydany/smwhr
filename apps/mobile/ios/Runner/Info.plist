@@ -47,6 +47,20 @@
 			</array>
 		</dict>
 	</dict>
+	<key>NSLocationWhenInUseUsageDescription</key>
+	<string>smwhr usa tu ubicación para detectar cuando llegas al evento.</string>
+	<key>NSLocationAlwaysAndWhenInUseUsageDescription</key>
+	<string>smwhr verifica que estuviste durante el evento. Solo trackea durante quests activas.</string>
+	<key>NSMotionUsageDescription</key>
+	<string>smwhr usa datos de movimiento para ahorrar batería durante quests.</string>
+	<key>NSCameraUsageDescription</key>
+	<string>smwhr usa la cámara para capturar tu momento en el evento.</string>
+	<key>UIBackgroundModes</key>
+	<array>
+		<string>location</string>
+		<string>fetch</string>
+		<string>remote-notification</string>
+	</array>
 	<key>UIApplicationSupportsIndirectInputEvents</key>
 	<true/>
 	<key>UILaunchStoryboardName</key>

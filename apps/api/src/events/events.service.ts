@@ -41,7 +41,8 @@ export class EventsService {
     if (!event) {
       throw new ApiException(HttpStatus.NOT_FOUND, 'EVENT_NOT_FOUND', `Event ${slug} not found`);
     }
-    return event;
+    const geofencePolygon = await this.fetchPolygonOuterRing(event.id);
+    return { ...event, geofencePolygon };
   }
 
   async byId(id: string) {
@@ -49,6 +50,22 @@ export class EventsService {
     if (!event) {
       throw new ApiException(HttpStatus.NOT_FOUND, 'EVENT_NOT_FOUND', `Event ${id} not found`);
     }
-    return event;
+    const geofencePolygon = await this.fetchPolygonOuterRing(event.id);
+    return { ...event, geofencePolygon };
+  }
+
+  // Returns the outer ring of the event's geofence polygon as an array of
+  // [lng, lat] pairs (GeoJSON coordinate order). Empty array when the
+  // column is null. Mobile maps this to List<LatLng> for Locus geofence
+  // registration + Geolocator ray-casting.
+  private async fetchPolygonOuterRing(eventId: string): Promise<number[][]> {
+    const rows = await this.prisma.$queryRaw<
+      Array<{ coordinates: number[][] | null }>
+    >`
+      SELECT (ST_AsGeoJSON(geofence_polygon)::json->'coordinates'->0) as coordinates
+      FROM events
+      WHERE id = ${eventId}::uuid
+    `;
+    return rows[0]?.coordinates ?? [];
   }
 }

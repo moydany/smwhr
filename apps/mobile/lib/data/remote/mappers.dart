@@ -1,6 +1,7 @@
 import '../models/badge.dart';
 import '../models/event.dart';
 import '../models/event_category.dart';
+import '../models/lat_lng.dart';
 import '../models/quest.dart';
 import '../models/user.dart';
 
@@ -50,9 +51,9 @@ Map<String, dynamic> userToJson(User u) => {
     };
 
 /// Maps the backend Event JSON (incl. embedded badgeTemplate) to the
-/// Dart [Event]. Several mobile fields don't have a 1:1 backend column
-/// (geofencePolygon, ticketmasterUrl, promoterName) — reasonable
-/// defaults until we surface them.
+/// Dart [Event]. `geofencePolygon` is the GeoJSON outer ring surfaced by
+/// `EventsService` (array of `[lng, lat]` pairs). Empty when the event has
+/// no polygon — trackers fall back to the radius+center.
 Event eventFromJson(Map<String, dynamic> json) {
   final categorySlug = json['category'] as String? ?? 'music';
   final template = json['badgeTemplate'] as Map<String, dynamic>?;
@@ -70,7 +71,7 @@ Event eventFromJson(Map<String, dynamic> json) {
     heroImageUrl: json['heroImageUrl'] as String?,
     description: (json['description'] as String?) ?? '',
     category: EventCategory.fromSlug(categorySlug) ?? EventCategory.music,
-    geofencePolygon: const [],
+    geofencePolygon: _polygonFromGeoJson(json['geofencePolygon']),
     dwellMinimumMin: (json['dwellMinimumMin'] as int?) ?? 30,
     ticketmasterUrl:
         (json['externalSource'] as String?) == 'ticketmaster'
@@ -82,6 +83,19 @@ Event eventFromJson(Map<String, dynamic> json) {
     isFeatured: (json['isFeatured'] as bool?) ?? false,
     badgeFrameUrl: template?['frameSvgUrl'] as String?,
   );
+}
+
+List<LatLng> _polygonFromGeoJson(Object? raw) {
+  if (raw is! List) return const [];
+  final out = <LatLng>[];
+  for (final coord in raw) {
+    if (coord is! List || coord.length < 2) continue;
+    final lng = coord[0];
+    final lat = coord[1];
+    if (lng is! num || lat is! num) continue;
+    out.add(LatLng(lat.toDouble(), lng.toDouble()));
+  }
+  return List.unmodifiable(out);
 }
 
 /// Maps the backend Badge JSON (with embedded event + template) to the
