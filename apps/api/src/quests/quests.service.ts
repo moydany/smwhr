@@ -59,6 +59,15 @@ export class QuestsService {
         verificationScore: checkin.verificationScore,
         isVerified: checkin.isVerified,
         reconciledAt: checkin.reconciledAt,
+        // Surfaced so the mobile mapper can flip the
+        // deviceTrusted + integrityActive checks (it reads
+        // `checkin.integrityVerdict != null`) and the photoCapture
+        // check (`checkin.photoId != null`). Without these the
+        // active-quest screen never lights up the verification rows
+        // even after the integrity attestation + photo upload land.
+        integrityVerdict: checkin.integrityVerdict,
+        integrityCheckedAt: checkin.integrityCheckedAt,
+        photoId: checkin.photoId,
       } : null,
     };
   }

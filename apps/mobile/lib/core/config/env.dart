@@ -54,4 +54,20 @@ class Env {
     'QUEST_SYNC_INTERVAL_SECONDS',
     defaultValue: 1800,
   );
+
+  /// Override the active-quest dwell threshold to a fixed number of
+  /// seconds. `0` (default) means "use `event.dwellMinimumMin × 60`",
+  /// i.e. honour the backend value. Useful for smoke testing the
+  /// progress bar + Capture-CTA gate without sitting in the venue
+  /// for 5 / 45 / 60 minutes:
+  ///
+  ///     flutter run --dart-define=QUEST_DWELL_SECONDS_OVERRIDE=30
+  ///
+  /// Drives a *local* clock: the active-quest screen counts seconds
+  /// since the first GPS-verified status arrived from the backend.
+  /// Production should always boot with this unset.
+  static const int questDwellSecondsOverride = int.fromEnvironment(
+    'QUEST_DWELL_SECONDS_OVERRIDE',
+    defaultValue: 0,
+  );
 }

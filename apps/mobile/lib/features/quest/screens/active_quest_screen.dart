@@ -6,6 +6,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:permission_handler/permission_handler.dart' show openAppSettings;
 
+import '../../../core/config/env.dart';
 import '../../../core/router/app_router.dart';
 import '../../../core/theme/app_colors.dart';
 import '../../../core/theme/app_spacing.dart';
@@ -42,12 +43,33 @@ class _ActiveQuestScreenState extends ConsumerState<ActiveQuestScreen> {
   String? _startupError;
   bool _canOpenSettings = false;
 
+  /// Wall-clock timestamp when `status.checks.gpsVerified` first
+  /// flipped true. Powers the seconds-precision dwell display + the
+  /// `Env.questDwellSecondsOverride` testing gate. Null until the
+  /// first GPS-verified status arrives.
+  DateTime? _dwellStartedAt;
+  int _dwellElapsedSec = 0;
+
   @override
   void initState() {
     super.initState();
     _wallTicker = Timer.periodic(const Duration(seconds: 1), (_) {
       if (!mounted) return;
-      setState(() => _wallSeconds = (_wallSeconds + 1) % 60);
+      final statusAsync = ref.read(questStatusProvider(widget.eventId));
+      final gpsVerified = statusAsync.maybeWhen(
+        data: (s) => s.checks.gpsVerified,
+        orElse: () => false,
+      );
+      setState(() {
+        _wallSeconds = (_wallSeconds + 1) % 60;
+        if (gpsVerified && _dwellStartedAt == null) {
+          _dwellStartedAt = DateTime.now();
+        }
+        if (_dwellStartedAt != null) {
+          _dwellElapsedSec =
+              DateTime.now().difference(_dwellStartedAt!).inSeconds;
+        }
+      });
     });
     _bootQuest();
   }
@@ -130,6 +152,8 @@ class _ActiveQuestScreenState extends ConsumerState<ActiveQuestScreen> {
                     status: status,
                     event: eventAsync.value,
                     wallSeconds: _wallSeconds,
+                    dwellElapsedSec: _dwellElapsedSec,
+                    dwellOverrideSec: Env.questDwellSecondsOverride,
                     onCapture: () =>
                         _onCapture(context, ref, eventAsync.value),
                   ),
@@ -230,24 +254,46 @@ class _Body extends StatelessWidget {
   final QuestStatus status;
   final Event? event;
   final int wallSeconds;
+
+  /// Wall-clock seconds since the first GPS-verified status arrived.
+  /// Drives the seconds-precision progress bar when [dwellOverrideSec]
+  /// is non-zero.
+  final int dwellElapsedSec;
+
+  /// `Env.questDwellSecondsOverride`. When > 0, gates Capture on
+  /// [dwellElapsedSec] >= this value (instead of backend
+  /// `dwellMinutes` >= `dwellMinimumMin`). 0 = production behavior.
+  final int dwellOverrideSec;
+
   final VoidCallback onCapture;
 
   const _Body({
     required this.status,
     required this.event,
     required this.wallSeconds,
+    required this.dwellElapsedSec,
+    required this.dwellOverrideSec,
     required this.onCapture,
   });
 
   @override
   Widget build(BuildContext context) {
-    final dwellMinimum = event?.dwellMinimumMin ?? 60;
-    final readyToCapture = status.dwellMinutes >= dwellMinimum &&
+    final useOverride = dwellOverrideSec > 0;
+    final dwellMinimumMin = event?.dwellMinimumMin ?? 60;
+    final dwellPassed = useOverride
+        ? dwellElapsedSec >= dwellOverrideSec
+        : status.dwellMinutes >= dwellMinimumMin;
+    final readyToCapture = dwellPassed &&
         status.checks.gpsVerified &&
         status.checks.deviceTrusted &&
         status.checks.integrityActive;
-    final progress =
-        (status.dwellMinutes / dwellMinimum).clamp(0.0, 1.0).toDouble();
+    final progress = useOverride
+        ? (dwellElapsedSec / dwellOverrideSec).clamp(0.0, 1.0).toDouble()
+        : (status.dwellMinutes / dwellMinimumMin).clamp(0.0, 1.0).toDouble();
+    final activeLabel = useOverride
+        ? 'Active for ${dwellElapsedSec}s · ${dwellOverrideSec}s required for full verification'
+        : 'Active for ${status.dwellMinutes} minutes · '
+            '$dwellMinimumMin min required for full verification';
 
     return Expanded(
       child: Column(
@@ -259,8 +305,7 @@ class _Body extends StatelessWidget {
           ),
           const SizedBox(height: AppSpacing.sm),
           Text(
-            'Active for ${status.dwellMinutes} minutes · '
-            '$dwellMinimum min required for full verification',
+            activeLabel,
             style: AppTypography.bodySmall.copyWith(
               color: AppColors.textSecondary,
             ),
