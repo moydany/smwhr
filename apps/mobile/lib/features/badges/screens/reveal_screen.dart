@@ -1,3 +1,5 @@
+import 'dart:io';
+
 import 'package:flutter/material.dart' hide Badge;
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -25,7 +27,19 @@ import '../widgets/badge_card.dart';
 /// - 1600 ms onward: caption + Share / Save CTAs fade in.
 class RevealScreen extends ConsumerStatefulWidget {
   final String badgeId;
-  const RevealScreen({super.key, required this.badgeId});
+
+  /// Captured photo (just took). When non-null, replaces the procedural
+  /// EventArtwork in the badge frame's photo slot. The profile
+  /// collection grid + badge-detail screen don't have this — they
+  /// fall back to the EventArtwork until the server-side `sharp`
+  /// pipeline lands and surfaces `composedImageUrl` post-launch.
+  final File? photoFile;
+
+  const RevealScreen({
+    super.key,
+    required this.badgeId,
+    this.photoFile,
+  });
 
   @override
   ConsumerState<RevealScreen> createState() => _RevealScreenState();
@@ -144,6 +158,7 @@ class _RevealScreenState extends ConsumerState<RevealScreen>
               }
               return _Body(
                 badge: badge,
+                photoFile: widget.photoFile,
                 intro: _intro,
                 labelOpacity: _labelOpacity,
                 frameDrop: _frameDrop,
@@ -171,6 +186,7 @@ class _RevealScreenState extends ConsumerState<RevealScreen>
 
 class _Body extends StatelessWidget {
   final Badge badge;
+  final File? photoFile;
   final AnimationController intro;
   final Animation<double> labelOpacity;
   final Animation<double> frameDrop;
@@ -184,6 +200,7 @@ class _Body extends StatelessWidget {
 
   const _Body({
     required this.badge,
+    required this.photoFile,
     required this.intro,
     required this.labelOpacity,
     required this.frameDrop,
@@ -225,6 +242,7 @@ class _Body extends StatelessWidget {
                     opacity: frameOpacity.value,
                     child: _AnimatedBadge(
                       badge: badge,
+                      photoFile: photoFile,
                       photoOpacity: photoOpacity.value,
                       photoScale: photoScale.value,
                       serialOpacity: serialOpacity.value,
@@ -303,12 +321,14 @@ class _Body extends StatelessWidget {
 /// opacity overlay, all driven by the parent's intro controller.
 class _AnimatedBadge extends StatelessWidget {
   final Badge badge;
+  final File? photoFile;
   final double photoOpacity;
   final double photoScale;
   final double serialOpacity;
 
   const _AnimatedBadge({
     required this.badge,
+    required this.photoFile,
     required this.photoOpacity,
     required this.photoScale,
     required this.serialOpacity,
@@ -316,11 +336,17 @@ class _AnimatedBadge extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final photoOverride =
+        photoFile != null ? FileImage(photoFile!) : null;
     return Transform.scale(
       scale: 0.95 + 0.05 * photoOpacity,
       child: Stack(
         children: [
-          BadgeCard(badge: badge, dimmed: photoOpacity < 0.95),
+          BadgeCard(
+            badge: badge,
+            dimmed: photoOpacity < 0.95,
+            photoOverride: photoOverride,
+          ),
           // The photo composite: dim the underlying artwork until the photo
           // opacity ramps up.
           Positioned.fill(

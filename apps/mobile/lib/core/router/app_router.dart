@@ -1,3 +1,5 @@
+import 'dart:io';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
@@ -166,11 +168,21 @@ final appRouterProvider = Provider<GoRouter>((ref) {
       ),
       GoRoute(
         path: '/reveal/:badgeId',
-        pageBuilder: (context, state) => fadeThrough(
-          key: state.pageKey,
-          child: RevealScreen(badgeId: state.pathParameters['badgeId']!),
-          duration: const Duration(milliseconds: 500),
-        ),
+        pageBuilder: (context, state) {
+          // The camera screen passes the just-captured File via
+          // `extra` so the reveal can show the local photo before the
+          // server-side composite lands. Other call sites (deep links,
+          // notifications) fall through to the procedural fallback.
+          final photoFile = state.extra is File ? state.extra as File : null;
+          return fadeThrough(
+            key: state.pageKey,
+            child: RevealScreen(
+              badgeId: state.pathParameters['badgeId']!,
+              photoFile: photoFile,
+            ),
+            duration: const Duration(milliseconds: 500),
+          );
+        },
       ),
       GoRoute(
         path: '/badge/:badgeId',

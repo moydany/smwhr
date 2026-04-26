@@ -205,7 +205,12 @@ class _CameraScreenState extends ConsumerState<CameraScreen>
     if (!mounted) return;
 
     if (badgeId != null) {
-      context.go(AppRoutes.reveal(badgeId));
+      // Hand the captured File to the reveal screen via go_router's
+      // `extra` so the badge frame composites the actual photo
+      // immediately, instead of falling back to the procedural
+      // EventArtwork. Server-side `sharp` composite + `composedImageUrl`
+      // land post-launch.
+      context.go(AppRoutes.reveal(badgeId), extra: captured);
     } else {
       // Verifier didn't pass (score below threshold) — most often
       // because the dwell time hasn't accumulated enough points yet,

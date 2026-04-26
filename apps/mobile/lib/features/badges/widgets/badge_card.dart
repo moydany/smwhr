@@ -10,16 +10,20 @@ import '../../../features/camera/widgets/badge_frame_overlay.dart';
 import '../../../features/events/widgets/event_artwork.dart';
 
 /// Wraps the BadgeFrameOverlay in a glow-bordered surface and renders
-/// the post-capture composite (procedural EventArtwork stands in for
-/// the user's photo until real Camera capture lands in Phase 2).
+/// the post-capture composite. Defaults to the procedural EventArtwork
+/// fallback (used in the profile collection grid where the captured
+/// file isn't available locally); the reveal screen overrides with a
+/// `FileImage` of the just-captured photo.
 class BadgeCard extends StatelessWidget {
   final Badge badge;
   final bool dimmed; // mid-animation, before composite finishes
+  final ImageProvider? photoOverride;
 
   const BadgeCard({
     super.key,
     required this.badge,
     this.dimmed = false,
+    this.photoOverride,
   });
 
   @override
@@ -58,7 +62,9 @@ class BadgeCard extends StatelessWidget {
         event: event,
         photoSlot: ClipRRect(
           borderRadius: BorderRadius.circular(AppSpacing.radiusSmall),
-          child: EventArtwork(event: event, large: true),
+          child: photoOverride != null
+              ? Image(image: photoOverride!, fit: BoxFit.cover)
+              : EventArtwork(event: event, large: true),
         ),
         serialLabel: 'SMWHR ${badge.serialLabel}',
         verified: true,
