@@ -28,7 +28,8 @@
     "db:add-noon-hq": "ts-node prisma/scripts/add-noon-hq-test.ts",
     "db:add-1310-quick": "ts-node prisma/scripts/add-1310-quick-test.ts",
     "db:add-1340-quick": "ts-node prisma/scripts/add-1340-quick-test.ts",
-    "db:add-1355-quick": "ts-node prisma/scripts/add-1355-quick-test.ts"
+    "db:add-1355-quick": "ts-node prisma/scripts/add-1355-quick-test.ts",
+    "db:add-1410-quick": "ts-node prisma/scripts/add-1410-quick-test.ts"
   },
   "dependencies": {
     "@nestjs/common": "^11.0.1",
