@@ -276,3 +276,54 @@ DateTime? _date(Object? v) {
   }
   return null;
 }
+
+MyQuestEntry myQuestEntryFromJson(Map<String, dynamic> json) {
+  final eventJson = json['event'] as Map<String, dynamic>;
+  // The endpoint ships only the event fields the list needs, not the
+  // full Event payload — fields like geofence/description/countryCode
+  // are absent. We still want to reuse the existing Event class so
+  // the row widgets and the tap → eventDetail navigation just work;
+  // missing fields get safe defaults.
+  final event = Event(
+    id: eventJson['id'] as String,
+    slug: eventJson['slug'] as String,
+    title: eventJson['title'] as String,
+    artistName: eventJson['artistName'] as String?,
+    venueName: eventJson['venueName'] as String,
+    city: eventJson['city'] as String,
+    countryCode: 'MX',
+    description: '',
+    category: EventCategory.fromSlug(eventJson['category'] as String) ??
+        EventCategory.music,
+    heroImageUrl: eventJson['heroImageUrl'] as String?,
+    startsAt: DateTime.parse(eventJson['startsAt'] as String),
+    endsAt: DateTime.parse(eventJson['endsAt'] as String),
+    geofencePolygon: const [],
+  );
+  final phase = QuestPhase.values.byName(json['phase'] as String);
+  final status = MyQuestStatus.values.byName(json['status'] as String);
+  final ck = json['checkin'] as Map<String, dynamic>?;
+  final bd = json['badge'] as Map<String, dynamic>?;
+  return MyQuestEntry(
+    event: event,
+    intentCreatedAt: DateTime.parse(json['intentCreatedAt'] as String),
+    phase: phase,
+    status: status,
+    verification: ck == null
+        ? null
+        : QuestVerification(
+            isVerified: ck['isVerified'] as bool,
+            verificationScore: (ck['verificationScore'] as num).toDouble(),
+            reconciledAt: ck['reconciledAt'] == null
+                ? null
+                : DateTime.parse(ck['reconciledAt'] as String),
+          ),
+    badge: bd == null
+        ? null
+        : BadgeSummary(
+            id: bd['id'] as String,
+            serialNumber: bd['serialNumber'] as int,
+            awardedAt: DateTime.parse(bd['awardedAt'] as String),
+          ),
+  );
+}

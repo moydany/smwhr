@@ -196,4 +196,15 @@ class RealQuestsRepository implements QuestsRepository {
     // null when score < threshold (the verifier didn't pass).
     return res.data?['badgeId'] as String?;
   }
+
+  @override
+  Future<List<MyQuestEntry>> listMyQuests() async {
+    final res = await _api.dio.get<Map<String, dynamic>>('/me/quests');
+    final data = res.data ?? const {};
+    final list = (data['quests'] as List?) ?? const [];
+    return list
+        .cast<Map<String, dynamic>>()
+        .map(myQuestEntryFromJson)
+        .toList(growable: false);
+  }
 }
