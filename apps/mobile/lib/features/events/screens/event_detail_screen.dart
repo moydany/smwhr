@@ -85,6 +85,17 @@ class _EventDetailBodyState extends ConsumerState<_EventDetailBody> {
   /// user toggles intent off, so re-RSVP'ing kicks the tracker again.
   bool _autoStartTried = false;
 
+  /// Has the silent auto-claim attempt fired this screen visit? When
+  /// the screen renders with `canClaim == true && badgeId == null`,
+  /// we fire `finalizeQuest` once in the background. If the verifier
+  /// passes, the status provider invalidation flips the screen from
+  /// "Reclamar insignia" → "Ver tu insignia" without the user having
+  /// to tap anything. If it fails (verifier returns null), the manual
+  /// "Reclamar" button stays visible as the explicit fallback.
+  /// Resets when claim conditions go away, so a re-entry to claim
+  /// gets one fresh silent shot.
+  bool _autoClaimTried = false;
+
   @override
   void didUpdateWidget(covariant _EventDetailBody old) {
     super.didUpdateWidget(old);
@@ -145,6 +156,22 @@ class _EventDetailBodyState extends ConsumerState<_EventDetailBody> {
     );
     final canClaim = _canClaimNow(liveStatus);
 
+    // Silent auto-claim: when the screen first observes "ready to
+    // claim but no badge yet", fire finalize once in the background.
+    // If it passes, the user lands directly on "Ver tu insignia"
+    // without ever seeing the manual button. The button stays as the
+    // explicit fallback when the verifier rejects.
+    if (canClaim && !_autoClaimTried) {
+      _autoClaimTried = true;
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!mounted) return;
+        _silentAutoClaim(event.id);
+      });
+    }
+    if (!canClaim && _autoClaimTried) {
+      _autoClaimTried = false;
+    }
+
     return CustomScrollView(
       physics: const BouncingScrollPhysics(),
       slivers: [
@@ -180,6 +207,14 @@ class _EventDetailBodyState extends ConsumerState<_EventDetailBody> {
                 )
               else if (shouldRunQuest)
                 _QuestInProgressBanner(status: liveStatus)
+              else if (event.isPast)
+                // Event is over and we have no actionable state: no
+                // badge, no claim path, no quest in progress. Showing
+                // the "I'll be there" toggle would suggest you can
+                // still RSVP, which is misleading. Just stay quiet —
+                // the photos + tasks below give the user enough
+                // status context.
+                const SizedBox.shrink()
               else
                 SmwhrButton(
                   label: _busy
@@ -267,6 +302,22 @@ class _EventDetailBodyState extends ConsumerState<_EventDetailBody> {
     final m = spot.progressDenominator ?? 0;
     if (m == 0) return spot.isDone;
     return (n / m) >= 0.7;
+  }
+
+  /// Background finalize attempt with no UX side effects on failure.
+  /// On success, invalidates the status provider so the screen flips
+  /// to "Ver tu insignia" — no auto-navigation to reveal, the user
+  /// stays on the event detail and can decide when to view it. On
+  /// failure (network, verifier-rejects, anything), we swallow: the
+  /// manual "Reclamar insignia" button is the user-facing fallback.
+  Future<void> _silentAutoClaim(String eventId) async {
+    try {
+      final repo = ref.read(questsRepositoryProvider);
+      final badgeId = await repo.finalizeQuest(eventId);
+      if (badgeId != null && mounted) {
+        ref.invalidate(questStatusProvider(eventId));
+      }
+    } catch (_) {/* swallow — manual button stays as the fallback */}
   }
 
   Future<void> _claimBadge(String eventId) async {
