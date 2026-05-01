@@ -19,6 +19,7 @@ import '../../../data/models/event.dart';
 import '../../../data/models/photo_upload.dart';
 import '../../../data/providers.dart';
 import '../../../shared/widgets/smwhr_ambient_background.dart';
+import '../../quest/providers/quest_state_provider.dart';
 import '../services/exif_reader.dart';
 import '../widgets/badge_frame_overlay.dart';
 import '../widgets/shutter_button.dart';
@@ -219,6 +220,15 @@ class _CameraScreenState extends ConsumerState<CameraScreen>
     // is). Idempotent on TrackingSync's side.
     final sync = ref.read(trackingSyncProvider);
     unawaited(sync.drainPendingPhoto(event.id));
+
+    // Force the questStatus stream to reset so the synthetic
+    // gallery entry the repository injects (when the queue has a
+    // pending photo) lands on the next frame instead of waiting up
+    // to 5s for the periodic poll. Without this the user pops back
+    // to event_detail, sees the OLD gallery (no new thumbnail), and
+    // has to wait through a full status poll cycle before their
+    // just-captured shot appears.
+    ref.invalidate(questStatusProvider(event.id));
 
     if (!mounted) return;
     setState(() => _capturing = false);

@@ -79,14 +79,23 @@ class RealQuestsRepository implements QuestsRepository {
           // Inject a synthetic gallery entry pointing at the local
           // file so the user sees their just-captured photo
           // instantly. The real backend entry replaces it on the
-          // next poll after the drainer uploads. We dedupe by
-          // checking whether any server photo's capturedAt matches
-          // the queued capture time within ~2s.
+          // next poll after the drainer uploads.
+          //
+          // Dedupe window: server's `createdAt` for a photo is the
+          // moment the row was inserted in Postgres, which lags the
+          // client's `capturedAt` by however long the upload took
+          // (15-25s on Railway). A tight 2s window left both the
+          // synthetic AND the real photo visible side-by-side until
+          // the queue cleared on the NEXT cycle. 2 minutes is wider
+          // than any plausible upload latency and tighter than the
+          // gap between two intentional captures, so it dedupes
+          // exactly the just-uploaded shot without collapsing two
+          // separately-taken photos into one.
           final alreadyShipped = next.photos.any((p) =>
               p.capturedAt
                   .difference(pending.capturedAt)
                   .abs() <
-              const Duration(seconds: 2));
+              const Duration(minutes: 2));
           if (!alreadyShipped) {
             final synthetic = EventPhoto(
               id: 'pending-${pending.capturedAt.microsecondsSinceEpoch}',
