@@ -15,9 +15,7 @@ WORKDIR /app
 COPY pnpm-workspace.yaml package.json pnpm-lock.yaml ./
 COPY apps/api/package.json ./apps/api/
 
-# BuildKit cache mount keeps the pnpm content-addressable store across builds.
-RUN --mount=type=cache,id=pnpm-store,target=/pnpm/store \
-    pnpm install --frozen-lockfile --filter api...
+RUN pnpm install --frozen-lockfile --filter api...
 
 # Source comes after deps so dep layers stay cached.
 COPY apps/api ./apps/api
@@ -28,8 +26,7 @@ RUN pnpm exec prisma generate \
 
 # Strip dev deps + flatten workspace into self-contained tree at /prod/api.
 WORKDIR /app
-RUN --mount=type=cache,id=pnpm-store,target=/pnpm/store \
-    pnpm --filter=api deploy --prod /prod/api
+RUN pnpm --filter=api deploy --prod /prod/api
 
 # pnpm deploy reinstalls fresh, so regenerate the prisma client in the prod tree.
 RUN cd /prod/api && pnpm exec prisma generate
