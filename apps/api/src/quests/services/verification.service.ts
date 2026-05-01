@@ -134,20 +134,27 @@ export class VerificationService {
       input.primarySource === 'divergence_conservative' ? 0.7 : 1;
     const total = Math.max(0, Math.min(100, Math.round(raw * penaltyMultiplier)));
 
-    // Two hard gates layered on top of the score threshold:
+    // Three hard gates layered on top of the score threshold:
     //   1. The user must have actually arrived (some in-polygon point
-    //      landed). Without this, score might still cross 60 from
-    //      tracking + integrity alone — that would issue a badge to
-    //      someone who never showed up.
+    //      landed). Without this, score might still cross threshold
+    //      from tracking + integrity alone — that would issue a badge
+    //      to someone who never showed up.
     //   2. The spot-check ratio must clear `VERIFIED_SPOT_CHECK_RATIO`.
     //      This is the explicit verification rule that replaces the
     //      old `dwellMinutes >= dwellMinimumMin` test — anti-spoof by
     //      construction (random sampling timing) and tolerant of brief
     //      steps outside (no continuous-dwell pressure).
+    //   3. A photo MUST exist. The badge anchors visually to the
+    //      user's captured moment; issuing a badge with no photo to
+    //      composite leaves the reveal screen with a procedural
+    //      fallback and breaks the "you were there" promise. Without
+    //      this gate, a user could pass on GPS signals alone and game
+    //      the system by never opening the camera.
     const isVerified =
       total >= VERIFIED_SCORE_THRESHOLD &&
       input.hasArrived &&
-      presenceRatio >= VERIFIED_SPOT_CHECK_RATIO;
+      presenceRatio >= VERIFIED_SPOT_CHECK_RATIO &&
+      input.photo != null;
 
     return {
       total,

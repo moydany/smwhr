@@ -102,7 +102,7 @@ class QuestTracker {
   /// sync — mobile schedules this many random firings, backend gates
   /// verification at 40% of this count landing in-polygon.
   static int _targetSpotCheckCount(Duration eventDuration) {
-    final raw = (eventDuration.inMinutes / 12).round();
+    final raw = (eventDuration.inMinutes / 1.5).round();
     if (raw < 4) return 4;
     if (raw > 20) return 20;
     return raw;

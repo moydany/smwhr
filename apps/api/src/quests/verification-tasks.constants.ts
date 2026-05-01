@@ -31,6 +31,12 @@
  */
 export function targetSpotCheckCount(startsAt: Date, endsAt: Date): number {
   const minutes = Math.max(0, (endsAt.getTime() - startsAt.getTime()) / 60_000);
-  const raw = Math.round(minutes / 12);
+  // 1 attempt per 1.5 min until the cap. Tightening from `/12` to
+  // `/1.5` ramps short events meaningfully — a 15-min smoke test now
+  // schedules 10 attempts (4 inside passes), a 30-min event saturates
+  // at the 20-attempt cap, and longer events still cap at 20 (fine
+  // for R0.1 scale, revisit when battery telemetry from real shows
+  // the 20-attempt-per-event cost).
+  const raw = Math.round(minutes / 1.5);
   return Math.min(20, Math.max(4, raw));
 }

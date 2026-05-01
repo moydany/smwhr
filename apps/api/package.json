@@ -25,7 +25,8 @@
     "db:reset-future": "ts-node prisma/scripts/reset-future-events.ts",
     "db:upload-hero": "ts-node prisma/scripts/upload-event-hero.ts",
     "db:reset-hq": "ts-node prisma/scripts/reset-hq-test.ts",
-    "db:add-noon-hq": "ts-node prisma/scripts/add-noon-hq-test.ts"
+    "db:add-noon-hq": "ts-node prisma/scripts/add-noon-hq-test.ts",
+    "db:add-1250-quick": "ts-node prisma/scripts/add-1250-quick-test.ts"
   },
   "dependencies": {
     "@nestjs/common": "^11.0.1",

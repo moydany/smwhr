@@ -72,7 +72,7 @@ Future<QuestStatus> buildLocalQuestStatus({
 /// sync with `apps/api/src/quests/verification-tasks.constants.ts`
 /// and `quest_tracker.dart`'s own copy of this formula.
 int _targetSpotCheckCount(Duration eventDuration) {
-  final raw = (eventDuration.inMinutes / 12).round();
+  final raw = (eventDuration.inMinutes / 1.5).round();
   if (raw < 4) return 4;
   if (raw > 20) return 20;
   return raw;
