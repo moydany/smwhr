@@ -1,4 +1,4 @@
-import 'package:flutter/material.dart' hide Badge;
+import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
@@ -7,24 +7,22 @@ import '../../../core/router/app_router.dart';
 import '../../../core/theme/app_colors.dart';
 import '../../../core/theme/app_spacing.dart';
 import '../../../core/theme/app_typography.dart';
-import '../../../data/models/badge.dart';
 import '../../../data/models/event_category.dart';
+import '../../../data/models/quest.dart';
 import '../../../data/providers.dart';
 
-/// Pantalla — Quest history.
+/// Pantalla — Mis quests.
 ///
-/// Lista cronológica (más reciente primero) de las quests verificadas del
-/// usuario actual. Cada fila muestra fecha + estado + evento/artista/venue
-/// y enlaza al BadgeDetail correspondiente. Reutiliza la lista de badges
-/// del usuario porque hoy quest-completada == badge-emitido; cuando el
-/// backend distinga estados (failed / expired / abandoned) se incorporan
-/// aquí sin tocar el resto de la app.
+/// Lista cronológica (más reciente primero) de todas las quests del usuario
+/// (intents marcados), independientemente de si terminaron verificadas o no.
+/// Cada fila muestra fecha + estado + evento/artista/venue y enruta al
+/// BadgeDetail (si verificada) o al EventDetail (cualquier otro estado).
 class QuestHistoryScreen extends ConsumerWidget {
   const QuestHistoryScreen({super.key});
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final badgesAsync = ref.watch(_myBadgesProvider);
+    final questsAsync = ref.watch(_myQuestsProvider);
 
     return Scaffold(
       backgroundColor: AppColors.bg,
@@ -34,7 +32,7 @@ class QuestHistoryScreen extends ConsumerWidget {
           children: [
             const _TopBar(),
             Expanded(
-              child: badgesAsync.when(
+              child: questsAsync.when(
                 loading: () => const Center(
                   child: CircularProgressIndicator(color: AppColors.accent),
                 ),
@@ -49,12 +47,10 @@ class QuestHistoryScreen extends ConsumerWidget {
                     ),
                   ),
                 ),
-                data: (badges) {
-                  if (badges.isEmpty) {
+                data: (entries) {
+                  if (entries.isEmpty) {
                     return const _Empty();
                   }
-                  final sorted = [...badges]
-                    ..sort((a, b) => b.eventDate.compareTo(a.eventDate));
                   return ListView.separated(
                     physics: const BouncingScrollPhysics(),
                     padding: const EdgeInsets.fromLTRB(
@@ -63,11 +59,11 @@ class QuestHistoryScreen extends ConsumerWidget {
                       AppSpacing.lg,
                       AppSpacing.xxl,
                     ),
-                    itemCount: sorted.length,
+                    itemCount: entries.length,
                     separatorBuilder: (_, _) =>
                         const SizedBox(height: AppSpacing.sm),
                     itemBuilder: (context, i) =>
-                        _QuestRow(badge: sorted[i]),
+                        _QuestRow(entry: entries[i]),
                   );
                 },
               ),
@@ -113,7 +109,7 @@ class _TopBar extends StatelessWidget {
           ),
           const SizedBox(width: AppSpacing.xs),
           Text(
-            'Quest history',
+            'Mis quests',
             style: AppTypography.displaySmall,
           ),
         ],
@@ -123,12 +119,12 @@ class _TopBar extends StatelessWidget {
 }
 
 class _QuestRow extends StatelessWidget {
-  final Badge badge;
-  const _QuestRow({required this.badge});
+  final MyQuestEntry entry;
+  const _QuestRow({required this.entry});
 
   @override
   Widget build(BuildContext context) {
-    final ambient = _ambient(badge.category);
+    final ambient = _ambient(entry.event.category);
     return Material(
       color: AppColors.surface,
       borderRadius: BorderRadius.circular(AppSpacing.radiusCard),
@@ -136,7 +132,16 @@ class _QuestRow extends StatelessWidget {
         borderRadius: BorderRadius.circular(AppSpacing.radiusCard),
         onTap: () {
           HapticFeedback.lightImpact();
-          context.push(AppRoutes.badgeDetail(badge.id));
+          // Verified rows deep-link to the badge reveal; everything
+          // else routes to event-detail, which already handles the
+          // post-event claim button + the live status banner from
+          // the prior bug-fix.
+          if (entry.status == MyQuestStatus.verified &&
+              entry.badge != null) {
+            context.push(AppRoutes.badgeDetail(entry.badge!.id));
+          } else {
+            context.push(AppRoutes.eventDetail(entry.event.slug));
+          }
         },
         child: Container(
           padding: const EdgeInsets.all(AppSpacing.md),
@@ -147,7 +152,7 @@ class _QuestRow extends StatelessWidget {
           child: Row(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              _DateBlock(date: badge.eventDate, ambient: ambient),
+              _DateBlock(date: entry.event.startsAt, ambient: ambient),
               const SizedBox(width: AppSpacing.md),
               Expanded(
                 child: Column(
@@ -158,7 +163,7 @@ class _QuestRow extends StatelessWidget {
                         _CategoryDot(color: ambient),
                         const SizedBox(width: 6),
                         Text(
-                          _categoryLabel(badge.category),
+                          _categoryLabel(entry.event.category),
                           style: AppTypography.monoSmall.copyWith(
                             fontSize: 9,
                             letterSpacing: 1.4,
@@ -166,12 +171,12 @@ class _QuestRow extends StatelessWidget {
                           ),
                         ),
                         const Spacer(),
-                        const _VerifiedPill(),
+                        _StatusPill(status: entry.status),
                       ],
                     ),
                     const SizedBox(height: 6),
                     Text(
-                      badge.eventTitle,
+                      entry.event.title,
                       style: AppTypography.bodyMedium.copyWith(
                         fontWeight: FontWeight.w600,
                         height: 1.25,
@@ -179,11 +184,11 @@ class _QuestRow extends StatelessWidget {
                       maxLines: 2,
                       overflow: TextOverflow.ellipsis,
                     ),
-                    if (badge.artistName != null &&
-                        badge.artistName!.isNotEmpty) ...[
+                    if (entry.event.artistName != null &&
+                        entry.event.artistName!.isNotEmpty) ...[
                       const SizedBox(height: 2),
                       Text(
-                        badge.artistName!,
+                        entry.event.artistName!,
                         style: AppTypography.bodySmall.copyWith(
                           color: AppColors.textSecondary,
                         ),
@@ -193,33 +198,37 @@ class _QuestRow extends StatelessWidget {
                     ],
                     const SizedBox(height: AppSpacing.xs),
                     Text(
-                      '${badge.venueName} · ${badge.city}',
+                      '${entry.event.venueName} · ${entry.event.city}',
                       style: AppTypography.bodySmall.copyWith(
                         color: AppColors.textTertiary,
                       ),
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
                     ),
-                    const SizedBox(height: 6),
-                    Row(
-                      children: [
-                        Text(
-                          '#${badge.serial.toString().padLeft(5, '0')}',
-                          style: AppTypography.monoSmall.copyWith(
-                            fontSize: 10,
-                            color: AppColors.textTertiary,
+                    if (entry.badge != null) ...[
+                      const SizedBox(height: 6),
+                      Row(
+                        children: [
+                          Text(
+                            '#${entry.badge!.serialNumber.toString().padLeft(5, '0')}',
+                            style: AppTypography.monoSmall.copyWith(
+                              fontSize: 10,
+                              color: AppColors.textTertiary,
+                            ),
                           ),
-                        ),
-                        const SizedBox(width: AppSpacing.sm),
-                        Text(
-                          'Score ${(badge.verificationScore * 100).toStringAsFixed(0)}',
-                          style: AppTypography.monoSmall.copyWith(
-                            fontSize: 10,
-                            color: AppColors.textTertiary,
-                          ),
-                        ),
-                      ],
-                    ),
+                          if (entry.verification != null) ...[
+                            const SizedBox(width: AppSpacing.sm),
+                            Text(
+                              'Score ${entry.verification!.verificationScore.toStringAsFixed(0)}',
+                              style: AppTypography.monoSmall.copyWith(
+                                fontSize: 10,
+                                color: AppColors.textTertiary,
+                              ),
+                            ),
+                          ],
+                        ],
+                      ),
+                    ],
                   ],
                 ),
               ),
@@ -323,39 +332,85 @@ class _CategoryDot extends StatelessWidget {
   }
 }
 
-class _VerifiedPill extends StatelessWidget {
-  const _VerifiedPill();
+class _StatusPill extends StatelessWidget {
+  final MyQuestStatus status;
+  const _StatusPill({required this.status});
 
   @override
   Widget build(BuildContext context) {
+    final cfg = _configFor(status);
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 3),
       decoration: BoxDecoration(
-        color: AppColors.accentGlow,
+        color: cfg.bg,
         borderRadius: BorderRadius.circular(AppSpacing.radiusSmall),
       ),
       child: Row(
         mainAxisSize: MainAxisSize.min,
         children: [
           Text(
-            'VERIFIED',
+            cfg.label,
             style: AppTypography.monoSmall.copyWith(
               fontSize: 9,
               letterSpacing: 1.2,
-              color: AppColors.accent,
+              color: cfg.fg,
               fontWeight: FontWeight.w600,
             ),
           ),
-          const SizedBox(width: 2),
-          const Icon(
-            Icons.check_rounded,
-            size: 11,
-            color: AppColors.accent,
-          ),
+          if (cfg.icon != null) ...[
+            const SizedBox(width: 2),
+            Icon(cfg.icon, size: 11, color: cfg.fg),
+          ],
         ],
       ),
     );
   }
+
+  static _PillConfig _configFor(MyQuestStatus s) {
+    switch (s) {
+      case MyQuestStatus.verified:
+        return const _PillConfig(
+          label: 'VERIFIED',
+          bg: AppColors.accentGlow,
+          fg: AppColors.accent,
+          icon: Icons.check_rounded,
+        );
+      case MyQuestStatus.live:
+        return const _PillConfig(
+          label: 'EN CURSO',
+          bg: AppColors.accent,
+          fg: AppColors.textPrimary,
+          icon: null,
+        );
+      case MyQuestStatus.upcoming:
+        return const _PillConfig(
+          label: 'PRÓXIMO',
+          bg: AppColors.surfaceElevated,
+          fg: AppColors.textSecondary,
+          icon: null,
+        );
+      case MyQuestStatus.unverified:
+        return const _PillConfig(
+          label: 'SIN VERIFICAR',
+          bg: AppColors.surfaceElevated,
+          fg: AppColors.textTertiary,
+          icon: null,
+        );
+    }
+  }
+}
+
+class _PillConfig {
+  final String label;
+  final Color bg;
+  final Color fg;
+  final IconData? icon;
+  const _PillConfig({
+    required this.label,
+    required this.bg,
+    required this.fg,
+    required this.icon,
+  });
 }
 
 class _Empty extends StatelessWidget {
@@ -367,7 +422,7 @@ class _Empty extends StatelessWidget {
       child: Padding(
         padding: const EdgeInsets.all(AppSpacing.xl),
         child: Text(
-          'No quests yet — your first one is waiting.',
+          'Aún no marcaste intent en ningún evento — explora el feed.',
           textAlign: TextAlign.center,
           style: AppTypography.bodyMedium.copyWith(
             color: AppColors.textSecondary,
@@ -378,6 +433,6 @@ class _Empty extends StatelessWidget {
   }
 }
 
-final _myBadgesProvider = FutureProvider.autoDispose<List<Badge>>((ref) {
-  return ref.watch(badgesRepositoryProvider).listMyBadges();
+final _myQuestsProvider = FutureProvider.autoDispose<List<MyQuestEntry>>((ref) {
+  return ref.watch(questsRepositoryProvider).listMyQuests();
 });
