@@ -24,7 +24,11 @@ void main() {
   });
 
   ProviderContainer makeContainer() {
-    final c = ProviderContainer();
+    // Force mock mode regardless of `Env.useMocks`'s build-time default
+    // — the onboarding flow only has mock infrastructure wired here.
+    final c = ProviderContainer(
+      overrides: [useMocksProvider.overrideWithValue(true)],
+    );
     addTearDown(c.dispose);
     // Keep the autoDispose provider alive for the lifetime of the test.
     final sub = c.listen(onboardingControllerProvider, (_, _) {});

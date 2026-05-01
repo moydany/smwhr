@@ -1,22 +1,26 @@
 /// Runtime configuration flags for smwhr.
 ///
-/// Override via `--dart-define` at build/run time:
+/// Defaults are tuned for TestFlight builds against the static ngrok
+/// tunnel. To override at build/run time:
 ///
-///     flutter run --dart-define=USE_MOCKS=false
-///     flutter run --dart-define=API_BASE_URL=https://api.smwhr.dev
+///     flutter run --dart-define=USE_MOCKS=true        # mock-mode
+///     flutter run --dart-define=API_BASE_URL=https://other-host
 class Env {
   Env._();
 
-  /// True until Phase 2 wires real backends. Toggling to false makes every
-  /// Riverpod repository provider switch from `MockX` to `RealX` (which
-  /// throws `UnimplementedError` until those are written).
+  /// Mock-mode flag. Defaults to false so cold-launch hits the real
+  /// backend; pass `--dart-define=USE_MOCKS=true` for design-QA / unit
+  /// flows that don't need a network round-trip.
   static const bool useMocks =
-      bool.fromEnvironment('USE_MOCKS', defaultValue: true);
+      bool.fromEnvironment('USE_MOCKS', defaultValue: false);
 
-  /// Base URL for the NestJS API. Unused while [useMocks] is true.
+  /// Base URL for the NestJS API. Static ngrok tunnel that fronts the
+  /// founder's local Railway image during the soft-launch window.
+  /// Replace with the production domain (`api.smwhr.dev` or similar)
+  /// when the API is permanently hosted.
   static const String apiBaseUrl = String.fromEnvironment(
     'API_BASE_URL',
-    defaultValue: 'https://api.smwhr.dev',
+    defaultValue: 'https://crappie-patient-boxer.ngrok-free.app',
   );
 
   /// Supabase project URL. Unused while [useMocks] is true.
@@ -44,30 +48,32 @@ class Env {
   static const String bootAt =
       String.fromEnvironment('BOOT_AT', defaultValue: '');
 
-  /// Quest tracker sync cadence (seconds). Production: 30 min (locked
-  /// decision #4). For dev / smoke testing against the
-  /// `prueba-tulancingo-hq` event with a 5-min dwell, drop to 15-30s
-  /// so the bar visibly fills:
+  /// Quest tracker sync cadence (seconds). Default 15s for the
+  /// TestFlight soft-launch — keeps the verification UI snappy and
+  /// gives `syncFn`'s tail-call to `/finalize` plenty of chances to
+  /// land the badge mid-event. Bump to `1800` (30 min, locked
+  /// decision #4) for the broad-rollout build to cut traffic ~120×.
   ///
-  ///     flutter run --dart-define=QUEST_SYNC_INTERVAL_SECONDS=15
+  ///     flutter run --dart-define=QUEST_SYNC_INTERVAL_SECONDS=1800
   static const int questSyncIntervalSeconds = int.fromEnvironment(
     'QUEST_SYNC_INTERVAL_SECONDS',
-    defaultValue: 1800,
+    defaultValue: 15,
   );
 
   /// Override the active-quest dwell threshold to a fixed number of
-  /// seconds. `0` (default) means "use `event.dwellMinimumMin × 60`",
-  /// i.e. honour the backend value. Useful for smoke testing the
-  /// progress bar + Capture-CTA gate without sitting in the venue
-  /// for 5 / 45 / 60 minutes:
+  /// seconds. `0` means "use `event.dwellMinimumMin × 60`", i.e.
+  /// honour the backend value.
   ///
-  ///     flutter run --dart-define=QUEST_DWELL_SECONDS_OVERRIDE=30
+  /// Default 30s for the TestFlight soft-launch so testers can run
+  /// the full quest flow in under a minute without sitting in the
+  /// venue for 5+ minutes. Set to `0` for the broad-rollout build:
+  ///
+  ///     flutter run --dart-define=QUEST_DWELL_SECONDS_OVERRIDE=0
   ///
   /// Drives a *local* clock: the active-quest screen counts seconds
   /// since the first GPS-verified status arrived from the backend.
-  /// Production should always boot with this unset.
   static const int questDwellSecondsOverride = int.fromEnvironment(
     'QUEST_DWELL_SECONDS_OVERRIDE',
-    defaultValue: 0,
+    defaultValue: 30,
   );
 }
