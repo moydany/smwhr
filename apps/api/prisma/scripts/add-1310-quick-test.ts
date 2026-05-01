@@ -26,14 +26,14 @@ const HQ_VENUE: VenueLoc = {
   delta: 0.00018,
 };
 
-// 13:10 – 13:25 CDMX today (UTC-6 → 19:10–19:25 UTC).
+// 13:10 – 13:35 CDMX today (UTC-6 → 19:10–19:35 UTC).
 function quickWindowToday(): { startsAt: Date; endsAt: Date } {
   const now = new Date();
   const y = now.getUTCFullYear();
   const m = now.getUTCMonth();
   const d = now.getUTCDate();
   const startsAt = new Date(Date.UTC(y, m, d, 19, 10, 0));
-  const endsAt = new Date(Date.UTC(y, m, d, 19, 25, 0));
+  const endsAt = new Date(Date.UTC(y, m, d, 19, 35, 0));
   return { startsAt, endsAt };
 }
 
