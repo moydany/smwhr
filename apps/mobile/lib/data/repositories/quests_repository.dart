@@ -41,4 +41,10 @@ abstract class QuestsRepository {
   /// (score below threshold) — caller should fall back to a "your
   /// badge will be issued after the event" UX.
   Future<String?> finalizeQuest(String eventId);
+
+  /// Every event the current user has intent on, joined with the
+  /// derived status + (when present) the verification + badge data.
+  /// Backed by `GET /me/quests`. Returns the list pre-sorted by event
+  /// date desc.
+  Future<List<MyQuestEntry>> listMyQuests();
 }
