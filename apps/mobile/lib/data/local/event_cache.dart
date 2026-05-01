@@ -41,6 +41,39 @@ class EventCache {
     return eventFromJson(jsonDecode(raw) as Map<String, dynamic>);
   }
 
+  /// Scan the cache for an event with the given slug. O(n) over
+  /// cached entries — fine at our scale (≤ a few dozen per user) and
+  /// avoids maintaining a parallel slug→id index. Used by the offline
+  /// fallback in `RealEventsRepository.getEventBySlug` so the event
+  /// detail screen still loads when the venue has no network.
+  Future<Event?> getBySlug(String slug) async {
+    final box = await _open();
+    for (final raw in box.values) {
+      if (raw is! String) continue;
+      try {
+        final event = eventFromJson(jsonDecode(raw) as Map<String, dynamic>);
+        if (event.slug == slug) return event;
+      } catch (_) {/* corrupt row, skip */}
+    }
+    return null;
+  }
+
+  /// All cached events. Used by the auto-start service when the
+  /// `/me/quests` lookup fails — we scan local events and engage the
+  /// tracker for any that are currently live, so a venue with no
+  /// network still gets a quest started.
+  Future<List<Event>> all() async {
+    final box = await _open();
+    final out = <Event>[];
+    for (final raw in box.values) {
+      if (raw is! String) continue;
+      try {
+        out.add(eventFromJson(jsonDecode(raw) as Map<String, dynamic>));
+      } catch (_) {/* corrupt row, skip */}
+    }
+    return out;
+  }
+
   Future<void> clear(String eventId) async {
     final box = await _open();
     await box.delete(eventId);

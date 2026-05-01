@@ -312,6 +312,7 @@ final autoStartLiveQuestsServiceProvider =
     Provider<AutoStartLiveQuestsService>((ref) {
   return AutoStartLiveQuestsService(
     repository: ref.watch(questsRepositoryProvider),
+    eventCache: ref.watch(eventCacheProvider),
   );
 });
 

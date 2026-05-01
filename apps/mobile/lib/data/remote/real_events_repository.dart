@@ -65,10 +65,12 @@ class RealEventsRepository implements EventsRepository {
       return event;
     } on DioException catch (e) {
       if (e.response?.statusCode == 404) return null;
-      // Network / server error → try the cache so we degrade gracefully.
-      // We can't look up by slug in the cache without scanning, so we skip
-      // the offline fallback here; the by-id path below handles the
-      // common case (active quest reads via `getEventById`).
+      // Offline / server unreachable → scan the local cache by slug.
+      // Lets the event detail screen render at the venue with no
+      // network so the user can still see tasks + (more importantly)
+      // engage the tracker via the screen's auto-start hook.
+      final cached = await _cache.getBySlug(slug);
+      if (cached != null) return cached;
       rethrow;
     }
   }
