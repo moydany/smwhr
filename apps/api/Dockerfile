@@ -1,5 +1,5 @@
 # syntax=docker/dockerfile:1.7
-# Build context = repo root. Railway invokes via railway.json (dockerfilePath=apps/api/Dockerfile).
+# Build context = repo root. Railway uses railway.json (dockerfilePath=apps/api/Dockerfile).
 
 # ---- 1. base: shared image with corepack + pinned pnpm ----
 FROM node:20-bookworm-slim AS base
@@ -7,43 +7,52 @@ ENV PNPM_HOME=/pnpm
 ENV PATH=$PNPM_HOME:$PATH
 RUN corepack enable && corepack prepare pnpm@10.31.0 --activate
 
-# ---- 2. builder: full install + nest build + prisma generate ----
+# ---- 2. builder: full install (incl. devDeps) + prisma generate + nest build ----
 FROM base AS builder
 WORKDIR /app
 
-# Manifests first → maximize layer cache hits when source changes but deps don't.
 COPY pnpm-workspace.yaml package.json pnpm-lock.yaml ./
 COPY apps/api/package.json ./apps/api/
+COPY apps/api/prisma ./apps/api/prisma
 
 RUN pnpm install --frozen-lockfile --filter api...
 
-# Source comes after deps so dep layers stay cached.
 COPY apps/api ./apps/api
 
 WORKDIR /app/apps/api
 RUN pnpm exec prisma generate \
  && pnpm build
 
-# Strip dev deps + flatten workspace into self-contained tree at /prod/api.
-# --legacy: api has no workspace-package deps, so we don't need pnpm 10's
-# inject-workspace-packages machinery. Falls back to the simpler v9 behavior.
+# ---- 3. prod-deps: production-only node_modules + prisma client ----
+FROM base AS prod-deps
 WORKDIR /app
-RUN pnpm --filter=api deploy --prod --legacy /prod/api
 
-# pnpm deploy uses npm-pack rules → it excludes dist/ because the repo-root
-# .gitignore lists it. Bring the compiled output back into the prod tree.
-RUN cp -r /app/apps/api/dist /prod/api/dist
+COPY pnpm-workspace.yaml package.json pnpm-lock.yaml ./
+COPY apps/api/package.json ./apps/api/
+COPY apps/api/prisma ./apps/api/prisma
 
-# pnpm deploy reinstalls fresh, so regenerate the prisma client in the prod tree.
-RUN cd /prod/api && pnpm exec prisma generate
+RUN pnpm install --frozen-lockfile --prod --filter api...
 
-# ---- 3. runtime: minimal final image ----
+WORKDIR /app/apps/api
+RUN pnpm exec prisma generate
+
+# ---- 4. runtime ----
 FROM base AS runtime
 ENV NODE_ENV=production
 WORKDIR /app
 
-COPY --from=builder --chown=node:node /prod/api /app
+# Manifests + workspace structure (preserves pnpm symlinks across stages).
+COPY --from=prod-deps /app/pnpm-workspace.yaml /app/package.json /app/pnpm-lock.yaml ./
+COPY --from=prod-deps /app/apps/api/package.json ./apps/api/
+COPY --from=prod-deps /app/apps/api/prisma ./apps/api/prisma
 
-USER node
+# Prod-only node_modules (workspace + package levels).
+COPY --from=prod-deps /app/node_modules ./node_modules
+COPY --from=prod-deps /app/apps/api/node_modules ./apps/api/node_modules
+
+# Compiled NestJS output.
+COPY --from=builder /app/apps/api/dist ./apps/api/dist
+
 EXPOSE 3000
+WORKDIR /app/apps/api
 CMD ["pnpm", "start:prod"]
