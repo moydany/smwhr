@@ -110,27 +110,38 @@ class _Body extends StatelessWidget {
 class _TopBar extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
+    final router = GoRouter.of(context);
     return Row(
       children: [
-        if (GoRouter.of(context).canPop())
-          SizedBox(
-            width: 40,
-            height: 40,
-            child: Material(
-              color: Colors.transparent,
-              child: InkWell(
-                borderRadius: BorderRadius.circular(20),
-                onTap: () {
-                  HapticFeedback.lightImpact();
+        SizedBox(
+          width: 40,
+          height: 40,
+          child: Material(
+            color: Colors.transparent,
+            child: InkWell(
+              borderRadius: BorderRadius.circular(20),
+              onTap: () {
+                HapticFeedback.lightImpact();
+                // After a fresh claim the reveal screen replaces the
+                // stack with this one (`go`, not `push`), so canPop
+                // returns false and the user has no way back. Fall
+                // through to /home in that case so the badge detail
+                // is never a dead end.
+                if (router.canPop()) {
                   context.pop();
-                },
-                child: const Icon(
-                  Icons.arrow_back_ios_new_rounded,
-                  size: 18,
-                ),
+                } else {
+                  context.go(AppRoutes.home);
+                }
+              },
+              child: Icon(
+                router.canPop()
+                    ? Icons.arrow_back_ios_new_rounded
+                    : Icons.home_rounded,
+                size: 20,
               ),
             ),
           ),
+        ),
       ],
     );
   }

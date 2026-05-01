@@ -287,6 +287,14 @@ class _EventDetailBodyState extends ConsumerState<_EventDetailBody> {
   /// required — backend scores the photo as bonus points, not a hard
   /// gate. Returning false also when [liveStatus] is null keeps the
   /// button hidden during cold-start before the first poll lands.
+  /// Mirrors the backend's hard gates in
+  /// `VerificationService.score`: arrival ✓, spot-check ratio ≥
+  /// `VERIFIED_SPOT_CHECK_RATIO` (0.4), photo uploaded. As long as
+  /// these pass the verifier will issue the badge regardless of
+  /// whether the event window has closed — drift between this gate
+  /// and the server's would either show a "Reclamar" button that
+  /// always fails (gates too lax) or hide it when claim is actually
+  /// available (gates too strict, what we just fixed).
   bool _canClaimNow(QuestStatus? liveStatus) {
     if (liveStatus == null) return false;
     if (liveStatus.badgeId != null) return false;
@@ -306,11 +314,19 @@ class _EventDetailBodyState extends ConsumerState<_EventDetailBody> {
         status: VerificationTaskStatus.pending,
       ),
     );
+    final photo = tasks.firstWhere(
+      (t) => t.id == VerificationTaskId.photo,
+      orElse: () => const VerificationTask(
+        id: VerificationTaskId.photo,
+        status: VerificationTaskStatus.pending,
+      ),
+    );
     if (!arrival.isDone) return false;
+    if (!photo.isDone) return false;
     final n = spot.progressNumerator ?? 0;
     final m = spot.progressDenominator ?? 0;
     if (m == 0) return spot.isDone;
-    return (n / m) >= 0.7;
+    return (n / m) >= 0.4;
   }
 
   /// Best-effort tracker startup with two retries on failure (3 total
