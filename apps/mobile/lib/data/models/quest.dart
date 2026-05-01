@@ -179,10 +179,15 @@ class QuestStatus {
 }
 
 /// One photo captured for an event. Backend representation matches the
-/// `photos` array in `GET /quests/:id/status`.
+/// `photos` array in `GET /quests/:id/status`. The `localFilePath`
+/// slot is set ONLY for photos that haven't uploaded yet — the
+/// repository prepends a synthetic entry while the queue still has a
+/// pending capture so the gallery renders the just-taken shot
+/// instantly instead of waiting for the next status poll.
 class EventPhoto {
   final String id;
   final String? publicUrl;
+  final String? localFilePath;
   final DateTime capturedAt;
   final bool isInsideGeofence;
   final bool isWithinTimeWindow;
@@ -191,6 +196,7 @@ class EventPhoto {
   const EventPhoto({
     required this.id,
     required this.publicUrl,
+    this.localFilePath,
     required this.capturedAt,
     required this.isInsideGeofence,
     required this.isWithinTimeWindow,

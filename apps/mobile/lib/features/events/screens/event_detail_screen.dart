@@ -1,3 +1,5 @@
+import 'dart:io';
+
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -790,26 +792,48 @@ class _PhotoGalleryStrip extends StatelessWidget {
               color: AppColors.surfaceElevated,
             ),
             clipBehavior: Clip.antiAlias,
-            child: p.publicUrl == null || p.publicUrl!.isEmpty
-                ? const Center(
-                    child: Icon(
-                      Icons.image_outlined,
-                      size: 22,
-                      color: AppColors.textTertiary,
-                    ),
-                  )
-                : CachedNetworkImage(
-                    imageUrl: p.publicUrl!,
-                    fit: BoxFit.cover,
-                    placeholder: (_, _) => const SizedBox.shrink(),
-                    errorWidget: (_, _, _) => const Icon(
-                      Icons.broken_image_outlined,
-                      size: 18,
-                      color: AppColors.textTertiary,
-                    ),
-                  ),
+            child: _galleryThumb(p),
           );
         },
+      ),
+    );
+  }
+
+  /// Renders a thumbnail. Pending uploads (`localFilePath` set) read
+  /// directly from disk so the just-captured shot appears the moment
+  /// the user pops back from the camera, without waiting for the
+  /// drainer to finish uploading and the next status poll to bring
+  /// the row back. Server-backed photos (`publicUrl` set) go through
+  /// CachedNetworkImage as before.
+  Widget _galleryThumb(EventPhoto p) {
+    if (p.localFilePath != null && p.localFilePath!.isNotEmpty) {
+      return Image.file(
+        File(p.localFilePath!),
+        fit: BoxFit.cover,
+        errorBuilder: (_, _, _) => const Icon(
+          Icons.broken_image_outlined,
+          size: 18,
+          color: AppColors.textTertiary,
+        ),
+      );
+    }
+    if (p.publicUrl == null || p.publicUrl!.isEmpty) {
+      return const Center(
+        child: Icon(
+          Icons.image_outlined,
+          size: 22,
+          color: AppColors.textTertiary,
+        ),
+      );
+    }
+    return CachedNetworkImage(
+      imageUrl: p.publicUrl!,
+      fit: BoxFit.cover,
+      placeholder: (_, _) => const SizedBox.shrink(),
+      errorWidget: (_, _, _) => const Icon(
+        Icons.broken_image_outlined,
+        size: 18,
+        color: AppColors.textTertiary,
       ),
     );
   }

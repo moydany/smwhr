@@ -64,17 +64,43 @@ class RealQuestsRepository implements QuestsRepository {
         next = await _localStatusOrNull(eventId);
       }
       if (next != null) {
-        // Local-photo overlay: when a photo is queued for upload, force
-        // `photoCapture = true` so the active-quest checklist + the
-        // model's `tasks` getter render the photo task as captured-but-
-        // pending instead of flickering back to "—" the moment the
-        // first server response after re-connecting lands but before
-        // the upload drainer runs.
-        if (photoQueue.pending(eventId) != null &&
-            !next.checks.photoCapture) {
-          next = next.copyWith(
-            checks: next.checks.copyWith(photoCapture: true),
-          );
+        final pending = photoQueue.pending(eventId);
+        if (pending != null) {
+          // Force `photoCapture = true` so the active-quest checklist
+          // + the model's `tasks` getter render the photo task as
+          // captured-but-pending instead of flickering back to "—"
+          // between the first server response and the next upload
+          // drain tick.
+          if (!next.checks.photoCapture) {
+            next = next.copyWith(
+              checks: next.checks.copyWith(photoCapture: true),
+            );
+          }
+          // Inject a synthetic gallery entry pointing at the local
+          // file so the user sees their just-captured photo
+          // instantly. The real backend entry replaces it on the
+          // next poll after the drainer uploads. We dedupe by
+          // checking whether any server photo's capturedAt matches
+          // the queued capture time within ~2s.
+          final alreadyShipped = next.photos.any((p) =>
+              p.capturedAt
+                  .difference(pending.capturedAt)
+                  .abs() <
+              const Duration(seconds: 2));
+          if (!alreadyShipped) {
+            final synthetic = EventPhoto(
+              id: 'pending-${pending.capturedAt.microsecondsSinceEpoch}',
+              publicUrl: null,
+              localFilePath: pending.filePath,
+              capturedAt: pending.capturedAt,
+              isInsideGeofence: false,
+              isWithinTimeWindow: false,
+              isExifValid: false,
+            );
+            next = next.copyWith(
+              photos: [synthetic, ...next.photos],
+            );
+          }
         }
         yield next;
       }

@@ -581,8 +581,16 @@ class _CornerBracketPainter extends CustomPainter {
   bool shouldRepaint(covariant _CornerBracketPainter old) => false;
 }
 
+/// Cache-first lookup so the camera UI renders the badge frame
+/// overlay instantly. By the time the user lands here they've come
+/// through event_detail, which already wrote the event to
+/// EventCache. Going through `getEventById` would block on the
+/// backend round-trip — fine when the network is fast, but Railway
+/// can take seconds and the user just wants to compose a shot.
+/// Falls back to the network only if the cache is empty (rare).
 final _cameraEventProvider =
     FutureProvider.autoDispose.family<Event?, String>((ref, eventId) async {
-  final repo = ref.watch(eventsRepositoryProvider);
-  return repo.getEventById(eventId);
+  final cached = await ref.watch(eventCacheProvider).get(eventId);
+  if (cached != null) return cached;
+  return ref.watch(eventsRepositoryProvider).getEventById(eventId);
 });
