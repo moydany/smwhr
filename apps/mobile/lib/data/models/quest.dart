@@ -1,3 +1,5 @@
+import 'event.dart';
+
 /// Active quest state surfaced to the UI.
 ///
 /// In mock mode, this is mutated by `MockQuestsRepository`. In real mode
@@ -327,5 +329,72 @@ class GeolocatorPing {
     required this.longitude,
     required this.accuracy,
     required this.isInsidePolygon,
+  });
+}
+
+/// Status pill shown on the "Mis quests" list. Derived server-side
+/// (`MyQuestsService.listForUser`) so the list and event-detail
+/// screens never disagree about whether an event is live or post.
+enum MyQuestStatus { upcoming, live, verified, unverified }
+
+/// Lifecycle phase for an event from the current user's perspective.
+/// Mirrors the backend enum exactly — keep these strings in sync.
+enum QuestPhase { pre, during, post }
+
+/// One entry on the "Mis quests" list — an event the user RSVP'd to,
+/// joined with whatever verification + badge data already exists.
+class MyQuestEntry {
+  final Event event;
+  final DateTime intentCreatedAt;
+  final QuestPhase phase;
+  final MyQuestStatus status;
+  final QuestVerification? verification;
+  final BadgeSummary? badge;
+
+  const MyQuestEntry({
+    required this.event,
+    required this.intentCreatedAt,
+    required this.phase,
+    required this.status,
+    this.verification,
+    this.badge,
+  });
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is MyQuestEntry && other.event.id == event.id;
+
+  @override
+  int get hashCode => event.id.hashCode;
+}
+
+/// Snapshot of the current user's `Checkin` row for an event. Null
+/// until reconciliation has run — even successful runs return a row,
+/// so a non-null verification with `isVerified: false` is the
+/// "we tried, didn't make the threshold" signal.
+class QuestVerification {
+  final bool isVerified;
+  final double verificationScore;
+  final DateTime? reconciledAt;
+
+  const QuestVerification({
+    required this.isVerified,
+    required this.verificationScore,
+    this.reconciledAt,
+  });
+}
+
+/// Lightweight badge reference — just enough to deep-link into the
+/// reveal/badge-detail screen without requiring a full Badge fetch.
+class BadgeSummary {
+  final String id;
+  final int serialNumber;
+  final DateTime awardedAt;
+
+  const BadgeSummary({
+    required this.id,
+    required this.serialNumber,
+    required this.awardedAt,
   });
 }
