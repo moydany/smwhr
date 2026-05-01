@@ -25,8 +25,10 @@ RUN pnpm exec prisma generate \
  && pnpm build
 
 # Strip dev deps + flatten workspace into self-contained tree at /prod/api.
+# --legacy: api has no workspace-package deps, so we don't need pnpm 10's
+# inject-workspace-packages machinery. Falls back to the simpler v9 behavior.
 WORKDIR /app
-RUN pnpm --filter=api deploy --prod /prod/api
+RUN pnpm --filter=api deploy --prod --legacy /prod/api
 
 # pnpm deploy reinstalls fresh, so regenerate the prisma client in the prod tree.
 RUN cd /prod/api && pnpm exec prisma generate
