@@ -157,7 +157,7 @@ class _EventDetailBodyState extends ConsumerState<_EventDetailBody> {
       data: (s) => s,
       orElse: () => null,
     );
-    final canClaim = _canClaimNow(liveStatus);
+    final canClaim = _canClaimNow(liveStatus, eventId: event.id);
 
     // Silent auto-claim: when the screen first observes "ready to
     // claim but no badge yet", fire finalize once in the background.
@@ -297,7 +297,7 @@ class _EventDetailBodyState extends ConsumerState<_EventDetailBody> {
   /// and the server's would either show a "Reclamar" button that
   /// always fails (gates too lax) or hide it when claim is actually
   /// available (gates too strict, what we just fixed).
-  bool _canClaimNow(QuestStatus? liveStatus) {
+  bool _canClaimNow(QuestStatus? liveStatus, {required String eventId}) {
     if (liveStatus == null) return false;
     if (liveStatus.badgeId != null) return false;
     final tasks = liveStatus.tasks;
@@ -324,7 +324,13 @@ class _EventDetailBodyState extends ConsumerState<_EventDetailBody> {
       ),
     );
     if (!arrival.isDone) return false;
-    if (!photo.isDone) return false;
+    // Photo gate: server-side `done` OR a local capture pending
+    // upload. The claim flow drains the queue before finalizing —
+    // so as long as the bytes exist somewhere (server OR local),
+    // the user is one upload away from a passing verifier.
+    final hasLocalPhoto =
+        ref.read(photoQueueProvider).pending(eventId) != null;
+    if (!photo.isDone && !hasLocalPhoto) return false;
     final n = spot.progressNumerator ?? 0;
     final m = spot.progressDenominator ?? 0;
     if (m == 0) return spot.isDone;
@@ -369,14 +375,35 @@ class _EventDetailBodyState extends ConsumerState<_EventDetailBody> {
     }
   }
 
+  /// Drains any pending photo upload before finalizing. The verifier
+  /// requires a Photo row server-side; if we still have a local
+  /// capture queued, we MUST land that upload first or finalize will
+  /// reject. Returns null on success, an error message on failure
+  /// (caller decides whether to surface it).
+  Future<String?> _ensurePhotoUploaded(String eventId) async {
+    final pending = ref.read(photoQueueProvider).pending(eventId);
+    if (pending == null) return null;
+    try {
+      await ref.read(trackingSyncProvider).drainPendingPhoto(eventId);
+    } catch (e) {
+      return 'No pudimos subir tu foto: $e';
+    }
+    // If the queue still has a pending entry, the drain swallowed an
+    // error internally (it does that on transient failures). Refuse
+    // the claim so the user knows the photo isn't on the server yet.
+    if (ref.read(photoQueueProvider).pending(eventId) != null) {
+      return 'Tu foto sigue pendiente de subir. Verifica tu conexión e intenta de nuevo.';
+    }
+    return null;
+  }
+
   /// Background finalize attempt with no UX side effects on failure.
-  /// On success, invalidates the status provider so the screen flips
-  /// to "Ver tu insignia" — no auto-navigation to reveal, the user
-  /// stays on the event detail and can decide when to view it. On
-  /// failure (network, verifier-rejects, anything), we swallow: the
-  /// manual "Reclamar insignia" button is the user-facing fallback.
+  /// Drains the photo queue first so a local-only capture lands on
+  /// the server before the verifier sees the request.
   Future<void> _silentAutoClaim(String eventId) async {
     try {
+      final photoErr = await _ensurePhotoUploaded(eventId);
+      if (photoErr != null) return; // silent — manual button is the fallback
       final repo = ref.read(questsRepositoryProvider);
       final badgeId = await repo.finalizeQuest(eventId);
       if (badgeId != null && mounted) {
@@ -389,14 +416,31 @@ class _EventDetailBodyState extends ConsumerState<_EventDetailBody> {
     HapticFeedback.heavyImpact();
     setState(() => _claiming = true);
     try {
+      // Step 1: ensure photo is on the server. If it's only local,
+      // upload it now (requires internet). If upload fails, refuse
+      // the claim — finalize would reject anyway and the user would
+      // get a confusing "verifier rejected" message.
+      final photoErr = await _ensurePhotoUploaded(eventId);
+      if (!mounted) return;
+      if (photoErr != null) {
+        ScaffoldMessenger.maybeOf(context)?.showSnackBar(
+          SnackBar(
+            backgroundColor: AppColors.errorBackground,
+            duration: const Duration(seconds: 6),
+            content: Text(
+              photoErr,
+              style: AppTypography.bodySmall.copyWith(color: AppColors.error),
+            ),
+          ),
+        );
+        return;
+      }
+
+      // Step 2: now finalize.
       final repo = ref.read(questsRepositoryProvider);
       final badgeId = await repo.finalizeQuest(eventId);
       if (!mounted) return;
       if (badgeId != null) {
-        // Trigger an immediate status refresh so the next rebuild swaps
-        // the claim CTA for "Ver tu insignia". The poll loop would pick
-        // it up within 5s anyway, but invalidating here keeps the
-        // transition snappy.
         ref.invalidate(questStatusProvider(eventId));
         context.push(AppRoutes.reveal(badgeId));
       } else {
