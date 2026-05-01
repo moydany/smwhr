@@ -19,8 +19,12 @@ describe('MyQuestsService', () => {
     } as any;
   }
 
+  // Mirrors the real Prisma `Event` row shape — `artist` (not
+  // `artistName`) matches the column name in `schema.prisma`. Service
+  // maps `e.artist` → response `artistName`. Keeping the fixture
+  // realistic catches mapping drift before it hits prod.
   function event(id: string, fields: Partial<{
-    slug: string; title: string; artistName: string | null;
+    slug: string; title: string; artist: string | null;
     venueName: string; city: string; category: string;
     heroImageUrl: string | null; startsAt: Date; endsAt: Date;
   }> = {}) {
@@ -28,7 +32,7 @@ describe('MyQuestsService', () => {
       id,
       slug: fields.slug ?? `event-${id}`,
       title: fields.title ?? `Event ${id}`,
-      artistName: fields.artistName ?? null,
+      artist: fields.artist ?? null,
       venueName: fields.venueName ?? 'Venue',
       city: fields.city ?? 'CDMX',
       category: fields.category ?? 'music',
@@ -79,7 +83,10 @@ describe('MyQuestsService', () => {
   it('classifies a past intent with a badge as verified', async () => {
     const startsAt = new Date(Date.now() - 1000 * 60 * 60 * 24);
     const endsAt = new Date(startsAt.getTime() + 3 * 60 * 60 * 1000);
-    const e = event('3', { startsAt, endsAt });
+    // Lock the `artist` (Prisma column) → `artistName` (response
+    // field) mapping. If the service ever stops projecting this, the
+    // assertion below catches it.
+    const e = event('3', { startsAt, endsAt, artist: 'Coldplay' });
     const svc = new MyQuestsService(
       makePrisma({
         intents: [{ userId: 'u1', eventId: e.id, createdAt: new Date(), event: e }],
@@ -96,6 +103,7 @@ describe('MyQuestsService', () => {
     const r = await svc.listForUser('u1');
     expect(r.quests[0].status).toBe('verified');
     expect(r.quests[0].phase).toBe('post');
+    expect(r.quests[0].event.artistName).toBe('Coldplay');
     expect(r.quests[0].badge?.id).toBe('b3');
   });
 

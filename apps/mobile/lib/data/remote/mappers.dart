@@ -296,8 +296,8 @@ MyQuestEntry myQuestEntryFromJson(Map<String, dynamic> json) {
     category: EventCategory.fromSlug(eventJson['category'] as String) ??
         EventCategory.music,
     heroImageUrl: eventJson['heroImageUrl'] as String?,
-    startsAt: DateTime.parse(eventJson['startsAt'] as String),
-    endsAt: DateTime.parse(eventJson['endsAt'] as String),
+    startsAt: _date(eventJson['startsAt']) ?? DateTime.now(),
+    endsAt: _date(eventJson['endsAt']),
     geofencePolygon: const [],
   );
   final phase = QuestPhase.values.byName(json['phase'] as String);
@@ -306,7 +306,7 @@ MyQuestEntry myQuestEntryFromJson(Map<String, dynamic> json) {
   final bd = json['badge'] as Map<String, dynamic>?;
   return MyQuestEntry(
     event: event,
-    intentCreatedAt: DateTime.parse(json['intentCreatedAt'] as String),
+    intentCreatedAt: _date(json['intentCreatedAt']) ?? DateTime.now(),
     phase: phase,
     status: status,
     verification: ck == null
@@ -314,16 +314,14 @@ MyQuestEntry myQuestEntryFromJson(Map<String, dynamic> json) {
         : QuestVerification(
             isVerified: ck['isVerified'] as bool,
             verificationScore: (ck['verificationScore'] as num).toDouble(),
-            reconciledAt: ck['reconciledAt'] == null
-                ? null
-                : DateTime.parse(ck['reconciledAt'] as String),
+            reconciledAt: _date(ck['reconciledAt']),
           ),
     badge: bd == null
         ? null
         : BadgeSummary(
             id: bd['id'] as String,
             serialNumber: bd['serialNumber'] as int,
-            awardedAt: DateTime.parse(bd['awardedAt'] as String),
+            awardedAt: _date(bd['awardedAt']) ?? DateTime.now(),
           ),
   );
 }
