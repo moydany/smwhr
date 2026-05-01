@@ -22,9 +22,17 @@ class ApiClient {
     if (_instance != null) return _instance!;
     final dio = Dio(BaseOptions(
       baseUrl: baseUrl ?? Env.apiBaseUrl,
-      connectTimeout: const Duration(seconds: 10),
-      receiveTimeout: const Duration(seconds: 20),
-      sendTimeout: const Duration(seconds: 20),
+      // Railway hobby instances can take 20-30s on a cold-start
+      // hit before the NestJS process is ready to respond, and the
+      // /quests/:id/sync endpoint runs the full PostGIS pass plus
+      // verification-task recompute synchronously. 60s gives both
+      // enough headroom; the upload drainer + sync loop retries on
+      // the next tick anyway, so a fast-fail at 20s just meant
+      // burning through retries without ever giving the backend
+      // long enough to wake up.
+      connectTimeout: const Duration(seconds: 30),
+      receiveTimeout: const Duration(seconds: 60),
+      sendTimeout: const Duration(seconds: 60),
       headers: const {
         'accept': 'application/json',
         'content-type': 'application/json',

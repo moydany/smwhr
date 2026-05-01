@@ -138,19 +138,7 @@ class _EventDetailBodyState extends ConsumerState<_EventDetailBody> {
       _autoStartTried = true;
       WidgetsBinding.instance.addPostFrameCallback((_) async {
         if (!mounted) return;
-        try {
-          await ref.read(questsRepositoryProvider).startQuest(event.id);
-          debugPrint('[smwhr.quest] tracker started for ${event.slug}');
-          if (mounted && _trackerStartupError != null) {
-            setState(() => _trackerStartupError = null);
-          }
-        } catch (e) {
-          debugPrint(
-              '[smwhr.quest] tracker FAILED for ${event.slug}: $e');
-          if (mounted) {
-            setState(() => _trackerStartupError = e.toString());
-          }
-        }
+        await _attemptStartQuestWithRetry(event);
       });
     }
     if (!shouldRunQuest && _autoStartTried) {
@@ -221,11 +209,9 @@ class _EventDetailBodyState extends ConsumerState<_EventDetailBody> {
               else if (shouldRunQuest && _trackerStartupError != null)
                 _TrackerStartupErrorPanel(
                   error: _trackerStartupError!,
-                  onRetry: () {
-                    setState(() {
-                      _trackerStartupError = null;
-                      _autoStartTried = false;
-                    });
+                  onRetry: () async {
+                    setState(() => _trackerStartupError = null);
+                    await _attemptStartQuestWithRetry(event);
                   },
                 )
               else if (shouldRunQuest)
@@ -325,6 +311,44 @@ class _EventDetailBodyState extends ConsumerState<_EventDetailBody> {
     final m = spot.progressDenominator ?? 0;
     if (m == 0) return spot.isDone;
     return (n / m) >= 0.7;
+  }
+
+  /// Best-effort tracker startup with two retries on failure (3 total
+  /// attempts, 1s + 3s backoff). The first attempt usually fails for
+  /// transient reasons — Hive box still opening from a previous quest
+  /// session, locus plugin cold-start race, dio request timing out
+  /// against a Railway cold instance — and a single retry typically
+  /// succeeds. We only surface the error panel after the third
+  /// attempt so users don't see flicker for normal cold-start
+  /// hiccups, but we still capture the final failure visibly so the
+  /// founder isn't stuck wondering why GPS isn't recording.
+  Future<void> _attemptStartQuestWithRetry(Event event) async {
+    final repo = ref.read(questsRepositoryProvider);
+    const delays = [Duration(seconds: 1), Duration(seconds: 3)];
+    Object? lastError;
+    for (var attempt = 0; attempt < 3; attempt++) {
+      if (!mounted) return;
+      try {
+        await repo.startQuest(event.id);
+        debugPrint(
+            '[smwhr.quest] tracker started for ${event.slug} (attempt ${attempt + 1})');
+        if (mounted && _trackerStartupError != null) {
+          setState(() => _trackerStartupError = null);
+        }
+        return;
+      } catch (e) {
+        lastError = e;
+        debugPrint(
+            '[smwhr.quest] tracker attempt ${attempt + 1} FAILED for ${event.slug}: $e');
+        if (attempt < delays.length) {
+          await Future<void>.delayed(delays[attempt]);
+        }
+      }
+    }
+    if (mounted) {
+      setState(() => _trackerStartupError = lastError?.toString() ??
+          'Unknown error starting the tracker.');
+    }
   }
 
   /// Background finalize attempt with no UX side effects on failure.

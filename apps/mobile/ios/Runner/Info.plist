@@ -26,6 +26,16 @@
 	<string>$(FLUTTER_BUILD_NUMBER)</string>
 	<key>LSRequiresIPhoneOS</key>
 	<true/>
+	<key>NSCameraUsageDescription</key>
+	<string>smwhr usa la cámara para capturar tu momento en el evento.</string>
+	<key>NSLocationAlwaysAndWhenInUseUsageDescription</key>
+	<string>smwhr verifica que estuviste durante el evento. Solo trackea durante quests activas.</string>
+	<key>NSLocationWhenInUseUsageDescription</key>
+	<string>smwhr usa tu ubicación para detectar cuando llegas al evento.</string>
+	<key>NSMotionUsageDescription</key>
+	<string>smwhr usa datos de movimiento para ahorrar batería durante quests.</string>
+	<key>NSPhotoLibraryAddUsageDescription</key>
+	<string>smwhr guarda tu insignia compuesta en la galería cuando le das a "Save to camera roll".</string>
 	<key>UIApplicationSceneManifest</key>
 	<dict>
 		<key>UIApplicationSupportsMultipleScenes</key>
@@ -47,24 +57,16 @@
 			</array>
 		</dict>
 	</dict>
-	<key>NSLocationWhenInUseUsageDescription</key>
-	<string>smwhr usa tu ubicación para detectar cuando llegas al evento.</string>
-	<key>NSLocationAlwaysAndWhenInUseUsageDescription</key>
-	<string>smwhr verifica que estuviste durante el evento. Solo trackea durante quests activas.</string>
-	<key>NSMotionUsageDescription</key>
-	<string>smwhr usa datos de movimiento para ahorrar batería durante quests.</string>
-	<key>NSCameraUsageDescription</key>
-	<string>smwhr usa la cámara para capturar tu momento en el evento.</string>
-	<key>NSPhotoLibraryAddUsageDescription</key>
-	<string>smwhr guarda tu insignia compuesta en la galería cuando le das a "Save to camera roll".</string>
+	<key>UIApplicationSupportsIndirectInputEvents</key>
+	<true/>
 	<key>UIBackgroundModes</key>
 	<array>
 		<string>location</string>
 		<string>fetch</string>
 		<string>remote-notification</string>
+		<string>processing</string>
+		<string>nearby-interaction</string>
 	</array>
-	<key>UIApplicationSupportsIndirectInputEvents</key>
-	<true/>
 	<key>UILaunchStoryboardName</key>
 	<string>LaunchScreen</string>
 	<key>UIMainStoryboardFile</key>
