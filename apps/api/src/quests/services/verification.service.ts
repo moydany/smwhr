@@ -59,7 +59,19 @@ export interface ScoreBreakdown {
  * source of truth — clients can render their own progress bars off
  * `targetSpotCheckCount`, but issuance is decided here.
  */
-export const VERIFIED_SPOT_CHECK_RATIO = 0.7;
+// Fraction of `targetSpotCheckCount` that must land inside the venue
+// polygon for verification to pass. Combined with the slot-based
+// random scheduler (one ping per equal time slot), this gives users
+// enough leeway to step out for a bathroom/snack run without losing
+// verification — they just need to be present for ~40% of the
+// attempts. A user's example: a 4h event fires 20 attempts; 8 inside
+// is enough.
+//
+// 0.7 was the prior calibration; combined with a low target count
+// (3–6) it forced near-perfect attendance and rejected legitimate
+// users who briefly stepped outside the polygon during one or two
+// random fires.
+export const VERIFIED_SPOT_CHECK_RATIO = 0.4;
 // The score threshold is layered defense, not the canonical
 // verification rule — `presenceRatio >= VERIFIED_SPOT_CHECK_RATIO`
 // + `hasArrived` are the actual gates per R0.1. The previous 60

@@ -3,6 +3,7 @@ import { Prisma } from '@prisma/client';
 import { EventsService } from '../../events/events.service';
 import { PrismaService } from '../../prisma/prisma.service';
 import { targetSpotCheckCount } from '../verification-tasks.constants';
+import { VERIFIED_SPOT_CHECK_RATIO } from './verification.service';
 
 /**
  * Canonical task ids surfaced to the mobile UI. Mobile mirrors this in
@@ -113,6 +114,11 @@ export class VerificationTasksService {
         : firstInsideLocus ?? firstInsideGeolocator ?? null;
 
     const targetCount = targetSpotCheckCount(event.startsAt, event.endsAt);
+    // Mirror the verifier's gate: task is "done" the moment the user
+    // crosses the in-polygon ratio threshold, not when they land in
+    // every single attempt. Keeps the UI checklist consistent with
+    // what `VerificationService.score` will accept at finalize time.
+    const requiredInPolygon = Math.ceil(targetCount * VERIFIED_SPOT_CHECK_RATIO);
 
     const desired: Record<VerificationTaskId, DesiredTask> = {
       arrival: firstInside
@@ -124,7 +130,7 @@ export class VerificationTasksService {
         : { status: 'pending' },
       spot_checks: {
         status:
-          inPolygonGeolocatorCount >= targetCount
+          inPolygonGeolocatorCount >= requiredInPolygon
             ? 'done'
             : inPolygonGeolocatorCount > 0
               ? 'active'
@@ -132,7 +138,7 @@ export class VerificationTasksService {
         progressN: inPolygonGeolocatorCount,
         progressM: targetCount,
         evidenceAt:
-          inPolygonGeolocatorCount >= targetCount
+          inPolygonGeolocatorCount >= requiredInPolygon
             ? firstInsideGeolocator?.timestamp ?? null
             : null,
       },

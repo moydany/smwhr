@@ -97,10 +97,14 @@ class QuestTracker {
     _activeEventId = eventId;
   }
 
+  /// Mirrors backend `targetSpotCheckCount` in
+  /// `apps/api/src/quests/verification-tasks.constants.ts`. Keep in
+  /// sync — mobile schedules this many random firings, backend gates
+  /// verification at 40% of this count landing in-polygon.
   static int _targetSpotCheckCount(Duration eventDuration) {
-    final raw = (eventDuration.inMinutes / 30).round();
-    if (raw < 3) return 3;
-    if (raw > 6) return 6;
+    final raw = (eventDuration.inMinutes / 12).round();
+    if (raw < 4) return 4;
+    if (raw > 20) return 20;
     return raw;
   }
 

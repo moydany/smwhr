@@ -5,6 +5,7 @@ import { NotificationService } from '../../notifications/notification.service';
 import { PrismaService } from '../../prisma/prisma.service';
 import { ReconciliationService } from './reconciliation.service';
 import { VerificationService } from './verification.service';
+import { VerificationTasksService } from './verification-tasks.service';
 import { targetSpotCheckCount } from '../verification-tasks.constants';
 
 @Injectable()
@@ -15,6 +16,7 @@ export class CheckinFinalizerService {
     private readonly prisma: PrismaService,
     private readonly reconciler: ReconciliationService,
     private readonly verifier: VerificationService,
+    private readonly tasks: VerificationTasksService,
     private readonly audit: AuditService,
     private readonly notify: NotificationService,
   ) {}
@@ -36,6 +38,13 @@ export class CheckinFinalizerService {
         orderBy: { createdAt: 'desc' },
       }),
     ]);
+
+    // Recompute the task ledger first so its `progressM` (target spot
+    // checks) matches whatever the current formula returns. Without
+    // this, events that ran under an older formula keep their stale
+    // M and the UI checklist disagrees with what the verifier is
+    // actually about to score against.
+    await this.tasks.recompute(userId, eventId);
 
     const r = this.reconciler.reconcile({ locusEvents, geolocatorPings });
 

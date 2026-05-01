@@ -68,11 +68,13 @@ Future<QuestStatus> buildLocalQuestStatus({
 }
 
 /// Mirrors the backend's `targetSpotCheckCount` so offline N/M matches
-/// what the server will compute once the next sync lands.
+/// what the server will compute once the next sync lands. Kept in
+/// sync with `apps/api/src/quests/verification-tasks.constants.ts`
+/// and `quest_tracker.dart`'s own copy of this formula.
 int _targetSpotCheckCount(Duration eventDuration) {
-  final raw = (eventDuration.inMinutes / 30).round();
-  if (raw < 3) return 3;
-  if (raw > 6) return 6;
+  final raw = (eventDuration.inMinutes / 12).round();
+  if (raw < 4) return 4;
+  if (raw > 20) return 20;
   return raw;
 }
 

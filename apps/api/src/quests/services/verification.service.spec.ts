@@ -31,38 +31,40 @@ describe('VerificationService', () => {
     expect(r.isVerified).toBe(true);
   });
 
-  it('presence at the gate (ratio = 0.7) gets full credit AND verifies', () => {
+  it('presence at the gate (ratio = 0.4) gets full credit AND verifies', () => {
+    // 8 of 20 attempts landed inside — exactly the gate. The "8 of 20
+    // across different hours" example from the design doc.
     const r = svc.score({
       ...baseInput,
-      inPolygonGeolocatorCount: 7,
-      targetSpotCheckCount: 10,
+      inPolygonGeolocatorCount: 8,
+      targetSpotCheckCount: 20,
     });
-    expect(r.parts.presenceRatio).toBeCloseTo(0.7, 5);
+    expect(r.parts.presenceRatio).toBeCloseTo(0.4, 5);
     expect(r.parts.presence).toBe(35);
     expect(r.isVerified).toBe(true);
   });
 
-  it('presence below the gate (ratio < 0.7) blocks issuance even if total ≥ 60', () => {
-    // Score everything else maxed, but only 1 of 4 spot-checks landed
-    // inside (ratio 0.25). Hard gate must reject.
+  it('presence below the gate (ratio < 0.4) blocks issuance even if total clears the threshold', () => {
+    // Score everything else maxed, but only 1 of 10 spot-checks landed
+    // inside (ratio 0.1). Hard gate must reject.
     const r = svc.score({
       ...baseInput,
       inPolygonGeolocatorCount: 1,
-      targetSpotCheckCount: 4,
+      targetSpotCheckCount: 10,
     });
     expect(r.parts.presence).toBeLessThan(35);
-    expect(r.parts.presenceRatio).toBeCloseTo(0.25, 5);
-    // Even if total clears 60 from tracking + integrity + photo, the
-    // spot-check gate must dominate.
+    expect(r.parts.presenceRatio).toBeCloseTo(0.1, 5);
+    // Even if total clears the threshold from tracking + integrity +
+    // photo, the spot-check gate must dominate.
     expect(r.isVerified).toBe(false);
   });
 
   it('presence scales linearly up to the gate', () => {
-    // 7/20 = 0.35 = exactly half the gate ratio (0.7) → half the
+    // 4/20 = 0.2 = exactly half the gate ratio (0.4) → half the
     // presence points (35/2 = 17.5, rounds to 18).
     const r = svc.score({
       ...baseInput,
-      inPolygonGeolocatorCount: 7,
+      inPolygonGeolocatorCount: 4,
       targetSpotCheckCount: 20,
     });
     expect(r.parts.presenceRatio).toBeCloseTo(VERIFIED_SPOT_CHECK_RATIO / 2, 5);
@@ -77,7 +79,7 @@ describe('VerificationService', () => {
       ...baseInput,
       hasArrived: false,
     });
-    expect(r.total).toBeGreaterThanOrEqual(60);
+    expect(r.total).toBeGreaterThanOrEqual(40);
     expect(r.isVerified).toBe(false);
   });
 
@@ -102,9 +104,9 @@ describe('VerificationService', () => {
       integrityVerdict: null,
       photo: null,
     });
-    expect(r.parts.presence).toBeLessThan(15);
+    expect(r.parts.presence).toBeLessThan(35);
     expect(r.parts.tracking).toBeLessThan(15);
-    expect(r.total).toBeLessThan(60);
+    expect(r.total).toBeLessThan(40);
     expect(r.isVerified).toBe(false);
   });
 
