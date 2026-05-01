@@ -112,7 +112,11 @@ class _Body extends StatelessWidget {
                   quests: quests,
                   venues: venues,
                   artists: artists,
-                  onQuestsTap: isMe && quests > 0
+                  // Always enabled on your own profile — the screen
+                  // now lists every event you RSVP'd to (verified or
+                  // not), so a user with zero badges still has reason
+                  // to open it. Empty state surfaces a useful CTA.
+                  onQuestsTap: isMe
                       ? () => context.push(AppRoutes.questHistory)
                       : null,
                 ),
