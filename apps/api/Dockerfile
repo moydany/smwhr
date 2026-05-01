@@ -55,4 +55,8 @@ COPY --from=builder /app/apps/api/dist ./apps/api/dist
 
 EXPOSE 3000
 WORKDIR /app/apps/api
-CMD ["pnpm", "start:prod"]
+
+# Verbose startup so Railway logs show exactly which phase fails.
+# `set -e` exits immediately on the first failed step so we don't silently
+# fall through to `node dist/main` after a broken migrate.
+CMD ["sh", "-c", "set -e; echo '[boot] PORT='${PORT:-unset}; echo '[boot] node='$(node -v); echo '[boot] running prisma migrate deploy'; node node_modules/prisma/build/index.js migrate deploy; echo '[boot] migrations done, starting Nest'; node dist/main.js"]
