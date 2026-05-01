@@ -60,7 +60,17 @@ export interface ScoreBreakdown {
  * `targetSpotCheckCount`, but issuance is decided here.
  */
 export const VERIFIED_SPOT_CHECK_RATIO = 0.7;
-export const VERIFIED_SCORE_THRESHOLD = 60;
+// The score threshold is layered defense, not the canonical
+// verification rule — `presenceRatio >= VERIFIED_SPOT_CHECK_RATIO`
+// + `hasArrived` are the actual gates per R0.1. The previous 60
+// was calibrated against multi-hour concerts with hundreds of
+// tracker points; on shorter events (clinic visits, sub-1h
+// gatherings) even a fully-passing user maxed at ~57 because
+// `tracking` scales with point volume and `integrity` is stubbed
+// at 3 pending real DeviceCheck/Play Integrity wiring. Dropping to
+// 40 keeps the threshold meaningful (a wholly-failed run scores in
+// the teens) without rejecting legitimate short events.
+export const VERIFIED_SCORE_THRESHOLD = 40;
 
 @Injectable()
 export class VerificationService {
