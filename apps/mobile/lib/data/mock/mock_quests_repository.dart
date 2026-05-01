@@ -1,6 +1,8 @@
 import 'dart:async';
 import 'dart:io';
 
+import '../models/event.dart';
+import '../models/event_category.dart';
 import '../models/photo_upload.dart';
 import '../models/quest.dart';
 import '../repositories/quests_repository.dart';
@@ -89,6 +91,110 @@ class MockQuestsRepository implements QuestsRepository {
     // Mock badge id matches one of the seeded mock badges so the
     // reveal screen + profile collection grid both light up.
     return 'bdg-001';
+  }
+
+  @override
+  Future<List<MyQuestEntry>> listMyQuests() async {
+    await MockLatency.simulate();
+    // Hand-built fixtures spanning every MyQuestStatus so the screen
+    // can be smoke-tested in mock mode without standing up the
+    // backend. Dates are anchored relative to "now" so the phase
+    // computation on the server side would land on the same status
+    // for the same fixture.
+    final now = DateTime.now();
+    final past = now.subtract(const Duration(days: 7));
+    final live = now.subtract(const Duration(minutes: 30));
+    final future = now.add(const Duration(days: 14));
+    final older = now.subtract(const Duration(days: 30));
+
+    Event mkEvent({
+      required String id,
+      required String slug,
+      required String title,
+      required String? artist,
+      required DateTime starts,
+      required DateTime ends,
+    }) {
+      return Event(
+        id: id,
+        slug: slug,
+        title: title,
+        artistName: artist,
+        venueName: 'Estadio GNP',
+        city: 'CDMX',
+        countryCode: 'MX',
+        startsAt: starts,
+        endsAt: ends,
+        description: 'Mock event for the Mis quests fixture.',
+        category: EventCategory.music,
+        geofencePolygon: const [],
+      );
+    }
+
+    return [
+      MyQuestEntry(
+        event: mkEvent(
+          id: 'evt-verified',
+          slug: 'evt-verified',
+          title: 'BTS — World Tour',
+          artist: 'BTS',
+          starts: past,
+          ends: past.add(const Duration(hours: 3)),
+        ),
+        intentCreatedAt: past.subtract(const Duration(days: 14)),
+        phase: QuestPhase.post,
+        status: MyQuestStatus.verified,
+        verification: QuestVerification(
+          isVerified: true,
+          verificationScore: 88,
+          reconciledAt: past.add(const Duration(hours: 4)),
+        ),
+        badge: BadgeSummary(
+          id: 'bdg-001',
+          serialNumber: 42,
+          awardedAt: past.add(const Duration(hours: 4)),
+        ),
+      ),
+      MyQuestEntry(
+        event: mkEvent(
+          id: 'evt-live',
+          slug: 'evt-live',
+          title: 'Coldplay — Music of the Spheres',
+          artist: 'Coldplay',
+          starts: live,
+          ends: live.add(const Duration(hours: 3)),
+        ),
+        intentCreatedAt: live.subtract(const Duration(days: 5)),
+        phase: QuestPhase.during,
+        status: MyQuestStatus.live,
+      ),
+      MyQuestEntry(
+        event: mkEvent(
+          id: 'evt-upcoming',
+          slug: 'evt-upcoming',
+          title: 'Bad Bunny — Most Wanted Tour',
+          artist: 'Bad Bunny',
+          starts: future,
+          ends: future.add(const Duration(hours: 3)),
+        ),
+        intentCreatedAt: now.subtract(const Duration(days: 1)),
+        phase: QuestPhase.pre,
+        status: MyQuestStatus.upcoming,
+      ),
+      MyQuestEntry(
+        event: mkEvent(
+          id: 'evt-unverified',
+          slug: 'evt-unverified',
+          title: 'Festival Vive Latino',
+          artist: null,
+          starts: older,
+          ends: older.add(const Duration(hours: 8)),
+        ),
+        intentCreatedAt: older.subtract(const Duration(days: 30)),
+        phase: QuestPhase.post,
+        status: MyQuestStatus.unverified,
+      ),
+    ]..sort((a, b) => b.event.startsAt.compareTo(a.event.startsAt));
   }
 
   void dispose() {

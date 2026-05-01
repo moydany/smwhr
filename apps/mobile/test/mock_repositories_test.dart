@@ -12,6 +12,8 @@ import 'package:hive/hive.dart';
 import 'package:smwhr/data/mock/mock_auth_repository.dart';
 import 'package:smwhr/data/mock/mock_badges_repository.dart';
 import 'package:smwhr/data/mock/mock_events_repository.dart';
+import 'package:smwhr/data/mock/mock_quests_repository.dart';
+import 'package:smwhr/data/models/quest.dart';
 import 'package:smwhr/data/repositories/auth_repository.dart';
 
 void main() {
@@ -83,6 +85,46 @@ void main() {
       expect(await repo.hasIntent(id), isTrue);
       await repo.removeIntent(id);
       expect(await repo.hasIntent(id), isFalse);
+    });
+  });
+
+  group('MockQuestsRepository.listMyQuests', () {
+    test('returns 4 entries spanning every status', () async {
+      final repo = MockQuestsRepository();
+      final entries = await repo.listMyQuests();
+      final statuses = entries.map((e) => e.status).toSet();
+      expect(statuses, containsAll([
+        MyQuestStatus.verified,
+        MyQuestStatus.live,
+        MyQuestStatus.upcoming,
+        MyQuestStatus.unverified,
+      ]));
+    });
+
+    test('verified entries carry a non-null badge', () async {
+      final repo = MockQuestsRepository();
+      final entries = await repo.listMyQuests();
+      for (final e in entries) {
+        if (e.status == MyQuestStatus.verified) {
+          expect(e.badge, isNotNull);
+        } else {
+          expect(e.badge, isNull);
+        }
+      }
+    });
+
+    test('sorts entries by event.startsAt desc', () async {
+      final repo = MockQuestsRepository();
+      final entries = await repo.listMyQuests();
+      for (var i = 1; i < entries.length; i++) {
+        expect(
+          entries[i - 1].event.startsAt.isAfter(entries[i].event.startsAt) ||
+              entries[i - 1].event.startsAt.isAtSameMomentAs(
+                entries[i].event.startsAt,
+              ),
+          isTrue,
+        );
+      }
     });
   });
 
