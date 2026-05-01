@@ -98,7 +98,7 @@ export class MyQuestsService {
           id: e.id,
           slug: e.slug,
           title: e.title,
-          artistName: e.artistName,
+          artistName: e.artist,
           venueName: e.venueName,
           city: e.city,
           category: e.category,

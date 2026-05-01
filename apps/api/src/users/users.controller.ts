@@ -21,6 +21,7 @@ import {
 } from '@nestjs/swagger';
 import type { User } from '@prisma/client';
 import { CurrentUser } from '../auth/decorators/current-user.decorator';
+import { MyQuestsService } from '../quests/services/my-quests.service';
 import { OnboardingDto } from './dto/onboarding.dto';
 import { UpdateMeDto } from './dto/update-me.dto';
 import { UsersService } from './users.service';
@@ -29,12 +30,21 @@ import { UsersService } from './users.service';
 @ApiBearerAuth()
 @Controller()
 export class UsersController {
-  constructor(private readonly users: UsersService) {}
+  constructor(
+    private readonly users: UsersService,
+    private readonly myQuests: MyQuestsService,
+  ) {}
 
   @Get('me')
   @ApiOperation({ summary: 'Authenticated user profile' })
   me(@CurrentUser() user: User) {
     return this.users.getMe(user);
+  }
+
+  @Get('me/quests')
+  @ApiOperation({ summary: 'Every event the current user has intent on, with derived status' })
+  listMyQuests(@CurrentUser() user: User) {
+    return this.myQuests.listForUser(user.id);
   }
 
   @Patch('me')
