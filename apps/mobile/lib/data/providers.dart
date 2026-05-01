@@ -2,6 +2,7 @@ import 'package:dio/dio.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../core/config/env.dart';
+import '../features/quest/services/auto_start_live_quests.dart';
 import '../features/quest/services/boot_drain.dart';
 import '../features/quest/services/geolocator_tracker.dart';
 import '../features/quest/services/locus_tracker.dart';
@@ -297,6 +298,18 @@ final bootDrainServiceProvider = Provider<BootDrainService>((ref) {
   return BootDrainService(
     db: ref.watch(trackingDbProvider),
     sync: ref.watch(trackingSyncProvider),
+  );
+});
+
+/// Sweeps `/me/quests` for live entries with intent and starts the
+/// tracker for the first one. Called from `main.dart` post-boot and
+/// from `didChangeAppLifecycleState` on resume so the user doesn't
+/// have to navigate to event_detail to kick the quest off — being
+/// foregrounded during the live window is enough.
+final autoStartLiveQuestsServiceProvider =
+    Provider<AutoStartLiveQuestsService>((ref) {
+  return AutoStartLiveQuestsService(
+    repository: ref.watch(questsRepositoryProvider),
   );
 });
 

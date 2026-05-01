@@ -78,6 +78,12 @@ Future<void> main() async {
     // splash on it.
     if (tokens.session != null) {
       unawaited(container.read(bootDrainServiceProvider).run());
+      // Auto-start any quest the user has intent on that's currently
+      // live. Without this the user has to manually navigate to
+      // event_detail for every live event for the tracker to engage.
+      // Fire-and-forget — failures (no network, no permission) are
+      // swallowed; the next foreground / event_detail visit retries.
+      unawaited(container.read(autoStartLiveQuestsServiceProvider).run());
     }
   }
 
@@ -127,11 +133,18 @@ class _SmwhrAppState extends ConsumerState<SmwhrApp>
     if (Env.useMocks) return;
     final tracker = ref.read(questTrackerProvider);
     final eventId = tracker.activeEventId;
-    if (eventId == null) return;
-    final sync = ref.read(trackingSyncProvider);
-    sync.syncBatch(eventId);
-    sync.drainPendingPhoto(eventId);
-    ref.invalidate(questStatusProvider(eventId));
+    if (eventId != null) {
+      final sync = ref.read(trackingSyncProvider);
+      sync.syncBatch(eventId);
+      sync.drainPendingPhoto(eventId);
+      ref.invalidate(questStatusProvider(eventId));
+      return;
+    }
+    // No active quest. Check if a live event with intent needs the
+    // tracker started — handles the case where the user RSVP'd
+    // earlier, backgrounded the app, and the event window opened
+    // while the app was suspended.
+    unawaited(ref.read(autoStartLiveQuestsServiceProvider).run());
   }
 
   @override
