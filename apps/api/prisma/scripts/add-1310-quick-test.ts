@@ -1,5 +1,5 @@
 /**
- * 12:50 PM CDMX, 15-minute window at smwhr HQ. Pairs with the new
+ * 13:10 PM CDMX, 15-minute window at smwhr HQ. Pairs with the
  * `targetSpotCheckCount` formula (1 attempt per 1.5 min, clamp 4-20)
  * which yields 10 attempts for a 15-min event; combined with the
  * 0.4 ratio gate that's 4 inside-polygon pings to verify.
@@ -9,7 +9,7 @@
  * reset-hq-test.ts.
  *
  * Usage:
- *   cd apps/api && pnpm db:add-1250-quick
+ *   cd apps/api && pnpm db:add-1310-quick
  */
 import { PrismaClient } from '@prisma/client';
 import {
@@ -26,22 +26,22 @@ const HQ_VENUE: VenueLoc = {
   delta: 0.00018,
 };
 
-// 12:50 – 13:05 CDMX today (UTC-6 → 18:50–19:05 UTC).
+// 13:10 – 13:25 CDMX today (UTC-6 → 19:10–19:25 UTC).
 function quickWindowToday(): { startsAt: Date; endsAt: Date } {
   const now = new Date();
   const y = now.getUTCFullYear();
   const m = now.getUTCMonth();
   const d = now.getUTCDate();
-  const startsAt = new Date(Date.UTC(y, m, d, 18, 50, 0));
-  const endsAt = new Date(Date.UTC(y, m, d, 19, 5, 0));
+  const startsAt = new Date(Date.UTC(y, m, d, 19, 10, 0));
+  const endsAt = new Date(Date.UTC(y, m, d, 19, 25, 0));
   return { startsAt, endsAt };
 }
 
 const { startsAt, endsAt } = quickWindowToday();
 
 const event: FutureEventInput = {
-  slug: 'smwhr-hq-1250-quick',
-  title: 'smwhr hq · 12:50 quick',
+  slug: 'smwhr-hq-1310-quick',
+  title: 'smwhr hq · 13:10 quick',
   venueName: 'smwhr HQ',
   city: 'Tulancingo',
   country: 'MX',
