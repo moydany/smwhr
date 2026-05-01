@@ -720,9 +720,18 @@ class _QuestTaskList extends StatelessWidget {
         hint: spot?.isDone == true
             ? 'Tu presencia quedó verificada'
             : 'Te verificamos en momentos aleatorios durante el evento',
-        trailing: spot?.progressDenominator == null
-            ? null
-            : '${spot!.progressNumerator ?? 0}/${spot.progressDenominator}',
+        // We deliberately don't surface the raw N/M progress —
+        // exposing the exact threshold makes spoofing easier
+        // (attackers know precisely how many fake fixes they need)
+        // and stresses out users mid-event with a counter that
+        // might tick up irregularly because of the random schedule.
+        // A status tag conveys "we're working on it / done" without
+        // leaking the gate.
+        trailing: switch (spot?.status ?? VerificationTaskStatus.pending) {
+          VerificationTaskStatus.done => null,
+          VerificationTaskStatus.active => 'En curso',
+          VerificationTaskStatus.pending => null,
+        },
       ),
       _PhotoTaskRow(
         status: photo?.status ?? VerificationTaskStatus.pending,
