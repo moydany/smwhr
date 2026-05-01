@@ -26,17 +26,36 @@ class TrackingDb {
   static const String _kIndexKey = 'ids';
 
   final Map<String, _EventBoxes> _open = {};
+  // Reference count per open eventId. Multiple callers (BootDrain
+  // sweep, QuestTracker.startQuest, periodic sync ticks) can open the
+  // same event concurrently — without refcounting, the first caller
+  // to `close()` would yank the box from under the others, throwing
+  // `TrackingDb not open` on every locus event the active tracker
+  // tries to append. Now each `open()` bumps the count and the box
+  // only actually closes when the last caller releases it.
+  final Map<String, int> _refs = {};
 
   Future<void> open(String eventId) async {
-    if (_open.containsKey(eventId)) return;
+    if (_open.containsKey(eventId)) {
+      _refs[eventId] = (_refs[eventId] ?? 0) + 1;
+      return;
+    }
     final locus = await Hive.openBox<LocusEvent>('tracking_${eventId}_locus');
     final pings = await Hive.openBox<GeolocatorPing>('tracking_${eventId}_pings');
     final meta = await Hive.openBox('tracking_${eventId}_meta');
     _open[eventId] = _EventBoxes(locus: locus, pings: pings, meta: meta);
+    _refs[eventId] = 1;
     await _recordEventId(eventId);
   }
 
   Future<void> close(String eventId) async {
+    final n = _refs[eventId];
+    if (n == null) return;
+    if (n > 1) {
+      _refs[eventId] = n - 1;
+      return;
+    }
+    _refs.remove(eventId);
     final boxes = _open.remove(eventId);
     if (boxes == null) return;
     await boxes.locus.close();
@@ -44,11 +63,17 @@ class TrackingDb {
     await boxes.meta.close();
   }
 
-  /// Closes every event currently open. Useful in tests.
+  /// Closes every event currently open, ignoring refcounts. Useful
+  /// in tests where setUp / tearDown control lifecycle directly.
   Future<void> closeAll() async {
     final ids = _open.keys.toList(growable: false);
     for (final id in ids) {
-      await close(id);
+      _refs.remove(id);
+      final boxes = _open.remove(id);
+      if (boxes == null) continue;
+      await boxes.locus.close();
+      await boxes.pings.close();
+      await boxes.meta.close();
     }
   }
 
