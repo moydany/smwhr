@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
+import 'package:permission_handler/permission_handler.dart' show openAppSettings;
 
 import '../../../core/router/app_router.dart';
 import '../../../core/theme/app_colors.dart';
@@ -85,6 +86,12 @@ class _EventDetailBodyState extends ConsumerState<_EventDetailBody> {
   /// user toggles intent off, so re-RSVP'ing kicks the tracker again.
   bool _autoStartTried = false;
 
+  /// When the silent auto-start path throws (permission denied,
+  /// tracker conflict, hive error), we capture the message here so
+  /// the in-progress banner can surface it instead of pretending the
+  /// quest is fine and silently failing to record pings.
+  String? _trackerStartupError;
+
   /// Has the silent auto-claim attempt fired this screen visit? When
   /// the screen renders with `canClaim == true && badgeId == null`,
   /// we fire `finalizeQuest` once in the background. If the verifier
@@ -129,22 +136,28 @@ class _EventDetailBodyState extends ConsumerState<_EventDetailBody> {
     // per visit.
     if (shouldRunQuest && !_autoStartTried) {
       _autoStartTried = true;
-      WidgetsBinding.instance.addPostFrameCallback((_) {
+      WidgetsBinding.instance.addPostFrameCallback((_) async {
         if (!mounted) return;
-        ref
-            .read(questsRepositoryProvider)
-            .startQuest(event.id)
-            .catchError((_) {
-          // Permission denied / event lookup failed — leave the in-
-          // progress banner visible; user can tap into the active
-          // quest screen to retry the permission flow if needed.
-        });
+        try {
+          await ref.read(questsRepositoryProvider).startQuest(event.id);
+          debugPrint('[smwhr.quest] tracker started for ${event.slug}');
+          if (mounted && _trackerStartupError != null) {
+            setState(() => _trackerStartupError = null);
+          }
+        } catch (e) {
+          debugPrint(
+              '[smwhr.quest] tracker FAILED for ${event.slug}: $e');
+          if (mounted) {
+            setState(() => _trackerStartupError = e.toString());
+          }
+        }
       });
     }
     if (!shouldRunQuest && _autoStartTried) {
       // User went from "in + live" back to "no intent" or "post" —
       // re-arm the auto-start so the next live entry triggers it.
       _autoStartTried = false;
+      _trackerStartupError = null;
     }
 
     final liveStatusAsync = shouldShowQuestStatus
@@ -204,6 +217,16 @@ class _EventDetailBodyState extends ConsumerState<_EventDetailBody> {
                     child: Icon(Icons.workspace_premium_rounded, size: 20),
                   ),
                   onPressed: _claiming ? null : () => _claimBadge(event.id),
+                )
+              else if (shouldRunQuest && _trackerStartupError != null)
+                _TrackerStartupErrorPanel(
+                  error: _trackerStartupError!,
+                  onRetry: () {
+                    setState(() {
+                      _trackerStartupError = null;
+                      _autoStartTried = false;
+                    });
+                  },
                 )
               else if (shouldRunQuest)
                 _QuestInProgressBanner(status: liveStatus)
@@ -840,6 +863,93 @@ class _QuestInProgressBanner extends StatelessWidget {
     if (!s.hasArrived) return 'Esperando tu llegada al venue';
     if (s.checks.photoCapture) return 'Tu momento ya quedó capturado';
     return 'Capturando tu momento';
+  }
+}
+
+/// Surfaces a `QuestTracker.startQuest` failure inline. Replaces the
+/// optimistic "QUEST ACTIVE · Sincronizando…" banner so the user
+/// can't be misled into thinking pings are recording when the
+/// tracker actually crashed during startup (typical causes: location
+/// permission downgraded to "When in use" instead of "Always", a
+/// stale active quest from a previous event id, Hive box error).
+class _TrackerStartupErrorPanel extends StatelessWidget {
+  final String error;
+  final VoidCallback onRetry;
+
+  const _TrackerStartupErrorPanel({
+    required this.error,
+    required this.onRetry,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.all(AppSpacing.md),
+      decoration: BoxDecoration(
+        color: AppColors.errorBackground,
+        borderRadius: BorderRadius.circular(AppSpacing.radiusButton),
+        border: Border.all(color: AppColors.error.withValues(alpha: 0.4)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              const Icon(Icons.warning_rounded,
+                  size: 18, color: AppColors.error),
+              const SizedBox(width: AppSpacing.xs),
+              Expanded(
+                child: Text(
+                  'Tu quest no arrancó',
+                  style: AppTypography.bodyMedium.copyWith(
+                    color: AppColors.error,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: AppSpacing.xs),
+          Text(
+            error,
+            style: AppTypography.bodySmall.copyWith(
+              color: AppColors.textSecondary,
+              height: 1.4,
+            ),
+            maxLines: 4,
+            overflow: TextOverflow.ellipsis,
+          ),
+          const SizedBox(height: AppSpacing.sm),
+          Row(
+            children: [
+              TextButton(
+                onPressed: onRetry,
+                style: TextButton.styleFrom(
+                  foregroundColor: AppColors.accent,
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: AppSpacing.sm,
+                  ),
+                ),
+                child: const Text('Reintentar'),
+              ),
+              const SizedBox(width: AppSpacing.xs),
+              TextButton(
+                onPressed: () async {
+                  await openAppSettings();
+                },
+                style: TextButton.styleFrom(
+                  foregroundColor: AppColors.textSecondary,
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: AppSpacing.sm,
+                  ),
+                ),
+                child: const Text('Ajustes'),
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
   }
 }
 
