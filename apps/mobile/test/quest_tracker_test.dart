@@ -38,7 +38,12 @@ void main() {
     }
   });
 
-  Event makeEvent({String id = 'event-1', List<LatLng>? polygon}) {
+  Event makeEvent({
+    String id = 'event-1',
+    List<LatLng>? polygon,
+    DateTime? startsAt,
+    DateTime? endsAt,
+  }) {
     return Event(
       id: id,
       slug: 'test-$id',
@@ -46,7 +51,10 @@ void main() {
       venueName: 'Venue',
       city: 'CDMX',
       countryCode: 'MX',
-      startsAt: DateTime.utc(2026, 5, 7, 20, 30),
+      // Default to a window centred on "now" so `isLive` returns true.
+      // Tests that need a past or future event override these.
+      startsAt: startsAt ?? DateTime.now().subtract(const Duration(hours: 1)),
+      endsAt: endsAt ?? DateTime.now().add(const Duration(hours: 1)),
       description: '',
       category: EventCategory.music,
       geofencePolygon: polygon ??
@@ -229,6 +237,43 @@ void main() {
         throwsA(isA<QuestException>()),
       );
       await tracker.stopQuest(eventA.id);
+    });
+
+    test('auto-stops the prior quest when its event window has closed',
+        () async {
+      // eventA already past — its tracker is "stuck" because we
+      // never called stopQuest. eventB is currently live (default
+      // makeEvent window). The new start should silently retire
+      // eventA and take over instead of throwing.
+      final eventA = makeEvent(
+        id: 'a-past',
+        startsAt: DateTime.now().subtract(const Duration(hours: 3)),
+        endsAt: DateTime.now().subtract(const Duration(hours: 1)),
+      );
+      final eventB = makeEvent(id: 'b-live');
+      final db = TrackingDb();
+      final sync = TrackingSync(
+        db: db,
+        syncFn: ({
+          required eventId,
+          required locusEvents,
+          required geolocatorPings,
+        }) async {},
+      );
+      final tracker = QuestTracker(
+        permissionFlow: _GrantingPermissionFlow(),
+        locusTracker: _FakeLocusTracker(),
+        geolocatorTracker: _FakeGeolocatorTracker(),
+        trackingDb: db,
+        trackingSync: sync,
+        eventsRepository:
+            _FakeEventsRepository({eventA.id: eventA, eventB.id: eventB}),
+      );
+      await tracker.startQuest(eventA.id);
+      expect(tracker.activeEventId, eventA.id);
+      await tracker.startQuest(eventB.id);
+      expect(tracker.activeEventId, eventB.id);
+      await tracker.stopQuest(eventB.id);
     });
   });
 

@@ -50,9 +50,20 @@ class QuestTracker {
     // use it to decide whether to skip.
     if (_activeEventId == eventId) return;
     if (_activeEventId != null) {
-      throw QuestException(
-        'Another quest is active for $_activeEventId. Stop it first.',
-      );
+      // If the previously-active quest's event window has already
+      // closed, auto-stop it and let the new quest take over. This
+      // covers the common "RSVP'd to two short events back-to-back"
+      // flow — without auto-stop the tracker stays pinned to the
+      // first event forever and every subsequent startQuest throws
+      // `Another quest is active`. We only throw when the active
+      // event is genuinely still live (user can't be at two places).
+      final stale = await _isPriorActiveStale();
+      if (!stale) {
+        throw QuestException(
+          'Another quest is active for $_activeEventId. Stop it first.',
+        );
+      }
+      await stopQuest(_activeEventId!);
     }
 
     final event = await eventsRepository.getEventById(eventId);
@@ -115,6 +126,23 @@ class QuestTracker {
     await trackingSync.finalSync(eventId);
     await trackingDb.close(eventId);
     _activeEventId = null;
+  }
+
+  /// True when the tracker still holds an `_activeEventId` whose
+  /// event window has closed. We use the EventCache directly (no
+  /// network) so the auto-stop decision works offline. If the event
+  /// can't be resolved at all we treat the active id as stale —
+  /// better to drop a phantom tracker than refuse a fresh quest.
+  Future<bool> _isPriorActiveStale() async {
+    final activeId = _activeEventId;
+    if (activeId == null) return false;
+    try {
+      final event = await eventsRepository.getEventById(activeId);
+      if (event == null) return true;
+      return !event.isLive;
+    } catch (_) {
+      return true;
+    }
   }
 }
 
