@@ -10,6 +10,7 @@ import 'core/router/app_router.dart';
 import 'core/theme/app_theme.dart';
 import 'data/local/adapters/geolocator_ping_adapter.dart';
 import 'data/local/adapters/locus_event_adapter.dart';
+import 'data/models/quest.dart';
 import 'data/providers.dart';
 import 'data/remote/auth_token_store.dart';
 import 'features/quest/providers/quest_state_provider.dart';
@@ -78,6 +79,28 @@ Future<void> main() async {
     // splash on it.
     if (tokens.session != null) {
       unawaited(container.read(bootDrainServiceProvider).run());
+      // Initialize the local-notification plugin (channel + iOS/
+      // Android permission ask). Then schedule reminders for every
+      // upcoming event the user already has intent on — without this
+      // backfill, intents set BEFORE the reminder feature shipped
+      // would never get notified.
+      unawaited(() async {
+        await container.read(questReminderServiceProvider).init();
+        try {
+          final entries =
+              await container.read(questsRepositoryProvider).listMyQuests();
+          final reminders = container.read(questReminderServiceProvider);
+          for (final e in entries) {
+            if (e.status == MyQuestStatus.upcoming) {
+              await reminders.schedule(
+                eventId: e.event.id,
+                eventTitle: e.event.title,
+                startsAt: e.event.startsAt,
+              );
+            }
+          }
+        } catch (_) {/* offline / auth lapsed — next boot retries */}
+      }());
       // Auto-start any quest the user has intent on that's currently
       // live. Without this the user has to manually navigate to
       // event_detail for every live event for the tracker to engage.

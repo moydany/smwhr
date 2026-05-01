@@ -5,6 +5,7 @@ import '../core/config/env.dart';
 import '../features/quest/services/auto_start_live_quests.dart';
 import '../features/quest/services/boot_drain.dart';
 import '../features/quest/services/geolocator_tracker.dart';
+import '../features/quest/services/quest_reminder.dart';
 import '../features/quest/services/locus_tracker.dart';
 import '../features/quest/services/permission_flow.dart';
 import '../features/quest/services/quest_tracker.dart';
@@ -150,6 +151,7 @@ final eventsRepositoryProvider = Provider<EventsRepository>((ref) {
   return RealEventsRepository(
     ref.watch(apiClientProvider),
     cache: ref.watch(eventCacheProvider),
+    reminders: ref.watch(questReminderServiceProvider),
   );
 });
 
@@ -312,6 +314,13 @@ final autoStartLiveQuestsServiceProvider =
     repository: ref.watch(questsRepositoryProvider),
   );
 });
+
+/// Schedules local notifications at event start so the user gets a
+/// nudge to open the app — the auto-start service then engages the
+/// tracker on resume. Singleton so the plugin instance + permission
+/// state are shared across `setIntent` / `removeIntent` calls.
+final questReminderServiceProvider =
+    Provider<QuestReminderService>((_) => QuestReminderService());
 
 final badgesRepositoryProvider = Provider<BadgesRepository>((ref) {
   if (ref.read(useMocksProvider)) {

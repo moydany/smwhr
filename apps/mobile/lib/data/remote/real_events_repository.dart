@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:dio/dio.dart';
 
+import '../../features/quest/services/quest_reminder.dart';
 import '../local/event_cache.dart';
 import '../models/event.dart';
 import '../models/event_category.dart';
@@ -16,10 +17,16 @@ import 'mappers.dart';
 /// dual-track quest can boot offline at the venue (no network → fall
 /// back to the cache → still get the polygon for `Locus.addPolygon`).
 class RealEventsRepository implements EventsRepository {
-  RealEventsRepository(this._api, {required EventCache cache}) : _cache = cache;
+  RealEventsRepository(
+    this._api, {
+    required EventCache cache,
+    required QuestReminderService reminders,
+  })  : _cache = cache,
+        _reminders = reminders;
 
   final ApiClient _api;
   final EventCache _cache;
+  final QuestReminderService _reminders;
 
   @override
   Future<List<Event>> listEvents({
@@ -94,6 +101,16 @@ class RealEventsRepository implements EventsRepository {
     // Pin the event in the cache as soon as the user commits — this is
     // the canonical "user intends to verify this event" signal.
     await _cache.save(event);
+    // Wake the user up the moment the event goes live. Tap → app opens
+    // → AutoStartLiveQuestsService engages the tracker. Errors here
+    // are non-fatal: notifications are nice-to-have, not the gate.
+    try {
+      await _reminders.schedule(
+        eventId: event.id,
+        eventTitle: event.title,
+        startsAt: event.startsAt,
+      );
+    } catch (_) {/* swallow — RSVP itself succeeded */}
     return event;
   }
 
@@ -103,6 +120,9 @@ class RealEventsRepository implements EventsRepository {
       '/events/$eventId/intent',
     );
     await _cache.clear(eventId);
+    try {
+      await _reminders.cancel(eventId);
+    } catch (_) {/* swallow */}
     return eventFromJson(res.data!);
   }
 
