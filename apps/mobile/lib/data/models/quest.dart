@@ -89,12 +89,21 @@ class QuestStatus {
   List<VerificationTask> get tasks {
     if (serverTasks.isNotEmpty) {
       if (!checks.photoCapture) return serverTasks;
+      // Local capture present (queue has a pending photo OR backend
+      // already saw it). Mark the task `done` immediately — the
+      // bytes are guaranteed to live somewhere, and the claim flow
+      // (`_ensurePhotoUploaded`) drains the queue before finalize so
+      // a not-yet-uploaded local capture still ends up on the server
+      // by the time the verifier scores. Showing `active` here made
+      // the user think the capture didn't register — they'd just
+      // taken a clearly-visible photo and the task was still
+      // unchecked.
       return serverTasks.map((t) {
         if (t.id != VerificationTaskId.photo) return t;
         if (t.status == VerificationTaskStatus.done) return t;
         return VerificationTask(
           id: t.id,
-          status: VerificationTaskStatus.active,
+          status: VerificationTaskStatus.done,
           evidenceAt: t.evidenceAt,
           progressNumerator: t.progressNumerator,
           progressDenominator: t.progressDenominator,
