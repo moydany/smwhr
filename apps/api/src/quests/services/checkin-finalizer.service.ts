@@ -33,8 +33,12 @@ export class CheckinFinalizerService {
       this.prisma.locusEvent.findMany({ where: { userId, eventId } }),
       this.prisma.geolocatorPing.findMany({ where: { userId, eventId } }),
       this.prisma.checkin.findUnique({ where: { userId_eventId: { userId, eventId } } }),
+      // Direct (userId, eventId) lookup — see verification-tasks
+      // service for the rationale (relation-based filter missed
+      // photos when Checkin.photoId was null or stuck on an
+      // orphaned id from a retried upload).
       this.prisma.photo.findFirst({
-        where: { userId, checkin: { userId, eventId } },
+        where: { userId, eventId },
         orderBy: { createdAt: 'desc' },
       }),
     ]);

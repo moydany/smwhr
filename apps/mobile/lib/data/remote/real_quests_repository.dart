@@ -64,6 +64,15 @@ class RealQuestsRepository implements QuestsRepository {
         next = await _localStatusOrNull(eventId);
       }
       if (next != null) {
+        // If the backend already echoed a photo for this event,
+        // force `checks.photoCapture = true` even when the
+        // checkin's photoId is stale or null. The user has visible
+        // proof in the gallery — the task should reflect that.
+        if (next.photos.isNotEmpty && !next.checks.photoCapture) {
+          next = next.copyWith(
+            checks: next.checks.copyWith(photoCapture: true),
+          );
+        }
         final pending = photoQueue.pending(eventId);
         if (pending != null) {
           // Force `photoCapture = true` so the active-quest checklist

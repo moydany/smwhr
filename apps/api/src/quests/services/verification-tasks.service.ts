@@ -96,8 +96,17 @@ export class VerificationTasksService {
       this.prisma.geolocatorPing.count({
         where: { userId, eventId, isInsidePolygon: true },
       }),
+      // Lookup by direct (userId, eventId) instead of going through
+      // the Checkin.photoId relation. The relation-based query missed
+      // photos in two real cases: (a) the upload retried after a
+      // timeout and the SECOND row was orphaned because Checkin's
+      // photoId stays sticky, (b) Checkin existed (from
+      // attestIntegrity) without a photoId set, so the relation
+      // resolved to nothing. Photo rows carry eventId directly —
+      // querying that is correct AND matches what `photos` returns
+      // in `getStatus`.
       this.prisma.photo.findFirst({
-        where: { userId, checkin: { eventId } },
+        where: { userId, eventId },
         orderBy: { createdAt: 'asc' },
         select: { id: true, createdAt: true },
       }),
