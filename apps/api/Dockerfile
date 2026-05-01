@@ -30,6 +30,10 @@ RUN pnpm exec prisma generate \
 WORKDIR /app
 RUN pnpm --filter=api deploy --prod --legacy /prod/api
 
+# pnpm deploy uses npm-pack rules → it excludes dist/ because the repo-root
+# .gitignore lists it. Bring the compiled output back into the prod tree.
+RUN cp -r /app/apps/api/dist /prod/api/dist
+
 # pnpm deploy reinstalls fresh, so regenerate the prisma client in the prod tree.
 RUN cd /prod/api && pnpm exec prisma generate
 
