@@ -55,6 +55,15 @@ class TrackingSync {
   final PhotoUploadFn? _photoUploadFn;
   final Duration _defaultInterval;
   final Map<String, Timer> _timers = {};
+  // Coalesces concurrent `drainPendingPhoto` calls per eventId. Two
+  // callers fire this method — the camera screen (immediately after
+  // capture) and the periodic timer (every sync tick). When a photo
+  // upload takes longer than the sync interval (very common on 4G
+  // for full-res JPGs), the timer-driven call observes the still-
+  // queued entry and uploads it AGAIN, giving the backend two Photo
+  // rows for one capture. The mutex collapses overlapping calls into
+  // a single in-flight Future.
+  final Map<String, Future<void>> _drainInFlight = {};
 
   /// Arms a `Timer.periodic` that calls [syncBatch] every [interval].
   /// Replaces any existing timer for [eventId]. When [interval] is omitted,
@@ -77,7 +86,23 @@ class TrackingSync {
   /// success; left in place on failure so the next tick (or
   /// `finalSync`) retries. No-op when the queue is empty or no
   /// uploader was wired in (mocks / tests).
+  ///
+  /// Concurrency: a drain already in flight for the same eventId is
+  /// returned as-is — see `_drainInFlight` for why.
   Future<void> drainPendingPhoto(String eventId) async {
+    final inFlight = _drainInFlight[eventId];
+    if (inFlight != null) return inFlight;
+
+    final future = _doDrain(eventId);
+    _drainInFlight[eventId] = future;
+    try {
+      await future;
+    } finally {
+      _drainInFlight.remove(eventId);
+    }
+  }
+
+  Future<void> _doDrain(String eventId) async {
     final queue = _photoQueue;
     final upload = _photoUploadFn;
     if (queue == null || upload == null) return;

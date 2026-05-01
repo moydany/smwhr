@@ -423,7 +423,7 @@ class _HeroArt extends StatelessWidget {
               ),
               const SizedBox(height: AppSpacing.xs),
               Text(
-                '${event.venueName} · ${_formatLongDate(event.startsAt)}',
+                '${event.venueName} · ${_formatLongDate(event.startsAt, event.endsAt)}',
                 style: AppTypography.bodySmall.copyWith(
                   color: AppColors.textSecondary,
                 ),
@@ -435,7 +435,7 @@ class _HeroArt extends StatelessWidget {
     );
   }
 
-  static String _formatLongDate(DateTime d) {
+  static String _formatLongDate(DateTime d, [DateTime? end]) {
     const days = [
       'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun',
     ];
@@ -445,10 +445,25 @@ class _HeroArt extends StatelessWidget {
     ];
     final dow = days[d.weekday - 1];
     final mon = months[d.month - 1];
+    final startTime = _hhmm(d);
+    final startAmpm = d.hour >= 12 ? 'PM' : 'AM';
+    if (end != null) {
+      final endTime = _hhmm(end);
+      final endAmpm = end.hour >= 12 ? 'PM' : 'AM';
+      // Same AM/PM half-day: show the suffix once at the end so the
+      // range reads tighter ("8:00 – 9:00 AM" vs "8:00 AM – 9:00 AM").
+      final timePart = startAmpm == endAmpm
+          ? '$startTime – $endTime $startAmpm'
+          : '$startTime $startAmpm – $endTime $endAmpm';
+      return '$dow, $mon ${d.day}, ${d.year} · $timePart';
+    }
+    return '$dow, $mon ${d.day}, ${d.year} · $startTime $startAmpm';
+  }
+
+  static String _hhmm(DateTime d) {
     final hour = d.hour > 12 ? d.hour - 12 : (d.hour == 0 ? 12 : d.hour);
-    final ampm = d.hour >= 12 ? 'PM' : 'AM';
     final mm = d.minute.toString().padLeft(2, '0');
-    return '$dow, $mon ${d.day}, ${d.year} · $hour:$mm $ampm';
+    return '$hour:$mm';
   }
 }
 
