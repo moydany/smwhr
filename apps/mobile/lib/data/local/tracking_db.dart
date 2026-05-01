@@ -60,6 +60,16 @@ class TrackingDb {
     await _require(eventId).pings.put(p.id, p);
   }
 
+  /// Every Geolocator ping persisted for [eventId], whether synced or
+  /// not. Used by the offline QuestStatus builder so the dwell counter
+  /// + spot-check N/M survives a successful sync followed by another
+  /// network drop.
+  Future<List<GeolocatorPing>> allGeolocatorPings(String eventId) async {
+    final boxes = _open[eventId];
+    if (boxes == null) return const [];
+    return boxes.pings.values.toList(growable: false);
+  }
+
   Future<List<LocusEvent>> unsyncedLocusEvents(String eventId) async {
     final boxes = _require(eventId);
     final synced = _readSyncedSet(boxes.meta, _kSyncedLocus);

@@ -16,63 +16,16 @@
  * uses ("moi", "sofia", etc.) they pick something else.
  */
 import { PrismaClient } from '@prisma/client';
+import {
+  TEMPLATE_IDS,
+  VENUES,
+  setEventGeofence,
+  upsertFutureEvent,
+  type FutureEventInput,
+  type VenueLoc,
+} from './lib/event-fixtures';
 
 const prisma = new PrismaClient();
-
-interface VenueLoc {
-  lat: number;
-  lng: number;
-  delta?: number;
-}
-
-const VENUES: Record<string, VenueLoc> = {
-  gnpSeguros: { lat: 19.4032, lng: -99.1755 },
-  estadioAzteca: { lat: 19.3029, lng: -99.1505 },
-  foroSol: { lat: 19.4044, lng: -99.0931 },
-  estadioBBVA: { lat: 25.6692, lng: -100.2447 },
-  laBombonera: { lat: -34.6356, lng: -58.3651 },
-  autodromo: { lat: 19.4042, lng: -99.0907, delta: 0.005 },
-  parqueBicentenario: { lat: 19.5043, lng: -99.1864, delta: 0.005 },
-  trasloma: { lat: 20.6750, lng: -103.4080 },
-  iztaccihuatl: { lat: 19.1789, lng: -98.6418, delta: 0.02 },
-  tepozteco: { lat: 18.9885, lng: -99.1014 },
-  guanajuatoCentro: { lat: 21.0190, lng: -101.2574, delta: 0.01 },
-  auditorioTelmex: { lat: 20.7237, lng: -103.4007 },
-  // Test venues for the active-quest sprint (Tulancingo HQ + Estadio Harp Helú).
-  franzBehr103: { lat: 20.0705988, lng: -98.3763053, delta: 0.001 },
-  estadioHarpHelu: { lat: 19.4033566, lng: -99.0843454, delta: 0.0025 },
-};
-
-function buildPolygonWkt(loc: VenueLoc): string {
-  const d = loc.delta ?? 0.0015;
-  const ring = [
-    [loc.lng - d, loc.lat - d],
-    [loc.lng + d, loc.lat - d],
-    [loc.lng + d, loc.lat + d],
-    [loc.lng - d, loc.lat + d],
-    [loc.lng - d, loc.lat - d],
-  ];
-  return `POLYGON((${ring.map(([x, y]) => `${x} ${y}`).join(', ')}))`;
-}
-
-async function setEventGeofence(eventId: string, loc: VenueLoc) {
-  const polygonWkt = buildPolygonWkt(loc);
-  const centerWkt = `POINT(${loc.lng} ${loc.lat})`;
-  await prisma.$executeRawUnsafe(`
-    UPDATE "events"
-    SET geofence_polygon = ST_GeogFromText('${polygonWkt}'),
-        geofence_center  = ST_GeogFromText('${centerWkt}')
-    WHERE id = '${eventId}'
-  `);
-}
-
-const TEMPLATE_IDS = {
-  music: '00000000-0000-0000-0000-000000000001',
-  sports: '00000000-0000-0000-0000-000000000002',
-  festivals: '00000000-0000-0000-0000-000000000003',
-  outdoor: '00000000-0000-0000-0000-000000000004',
-  culture: '00000000-0000-0000-0000-000000000005',
-} as const;
 
 const USER_IDS = {
   moi: '11111111-1111-1111-1111-111111110001',
@@ -159,25 +112,6 @@ async function seedUsers() {
   console.log(`✓ ${users.length} demo users`);
 }
 
-interface FutureEvent {
-  slug: string;
-  title: string;
-  artist?: string;
-  venueName: string;
-  city: string;
-  country?: string;
-  category: keyof typeof TEMPLATE_IDS;
-  startsAt: Date;
-  endsAt: Date;
-  dwellMin?: number;
-  description?: string;
-  heroColor?: string;
-  isFeatured?: boolean;
-  intentCount?: number;
-  totalCapacity?: number;
-  venue: VenueLoc;
-}
-
 async function seedFutureEvents() {
   // Test event "today" — wide window, short dwell so the active-quest
   // smoke runs in minutes. Pinned featured so it's easy to find on the
@@ -187,9 +121,9 @@ async function seedFutureEvents() {
   const todayEnd = new Date();
   todayEnd.setHours(23, 59, 59, 0);
 
-  const events: FutureEvent[] = [
+  const events: FutureEventInput[] = [
     { slug: 'prueba-tulancingo-hq', title: 'Prueba · HQ Tulancingo', venueName: 'Franz Behr 103', city: 'Tulancingo', category: 'culture', startsAt: todayStart, endsAt: todayEnd, dwellMin: 5, isFeatured: true, intentCount: 0, description: 'Evento de prueba para validar el dual-track tracker. Ventana abierta todo el día, dwell de 5 minutos.', heroColor: '#9D2DFF', venue: VENUES.franzBehr103 },
-    { slug: 'padres-diamondbacks-harp-helu-2026-04-26', title: 'Padres vs Diamondbacks', artist: 'MLB Mexico City Series', venueName: 'Estadio Alfredo Harp Helú', city: 'Ciudad de México', category: 'sports', startsAt: new Date('2026-04-26T19:00:00-06:00'), endsAt: new Date('2026-04-26T22:30:00-06:00'), dwellMin: 60, isFeatured: true, intentCount: 4200, description: 'San Diego visita la CDMX. Tres horas de béisbol bajo techo en el Harp Helú.', heroColor: '#2DFF95', venue: VENUES.estadioHarpHelu },
+    { slug: 'padres-diamondbacks-harp-helu-2026-04-26', title: 'Padres vs Diamondbacks', artist: 'MLB Mexico City Series', venueName: 'Estadio Alfredo Harp Helú', city: 'Ciudad de México', category: 'sports', startsAt: new Date('2026-04-26T20:00:00Z'), endsAt: new Date('2026-04-26T23:30:00Z'), dwellMin: 60, isFeatured: true, intentCount: 4200, description: 'San Diego visita la CDMX. Tres horas de béisbol bajo techo en el Harp Helú.', heroColor: '#2DFF95', venue: VENUES.estadioHarpHelu },
     { slug: 'bts-mexico-2026-n1', title: 'BTS World Tour · Noche 1', artist: 'BTS', venueName: 'Estadio GNP Seguros', city: 'Ciudad de México', category: 'music', startsAt: new Date('2026-05-07T20:30:00-06:00'), endsAt: new Date('2026-05-07T23:30:00-06:00'), dwellMin: 45, isFeatured: true, intentCount: 8420, description: 'La primera de tres noches que cambian todo. ARMY mexicano por fin recibe a los siete.', heroColor: '#FF2D95', venue: VENUES.gnpSeguros },
     { slug: 'bts-mexico-2026-n2', title: 'BTS World Tour · Noche 2', artist: 'BTS', venueName: 'Estadio GNP Seguros', city: 'Ciudad de México', category: 'music', startsAt: new Date('2026-05-09T20:30:00-06:00'), endsAt: new Date('2026-05-09T23:30:00-06:00'), dwellMin: 45, isFeatured: true, intentCount: 7910, description: 'Segunda noche. La que definitivamente vas a recordar.', heroColor: '#FF2D95', venue: VENUES.gnpSeguros },
     { slug: 'bts-mexico-2026-n3', title: 'BTS World Tour · Noche 3', artist: 'BTS', venueName: 'Estadio GNP Seguros', city: 'Ciudad de México', category: 'music', startsAt: new Date('2026-05-10T20:30:00-06:00'), endsAt: new Date('2026-05-10T23:30:00-06:00'), dwellMin: 45, isFeatured: true, intentCount: 8120, description: 'La última. Todo lo que se lloró se llora. Encore.', heroColor: '#FF2D95', venue: VENUES.gnpSeguros },
@@ -207,46 +141,7 @@ async function seedFutureEvents() {
     { slug: 'cervantino-2026', title: 'Festival Cervantino', venueName: 'Centro Histórico', city: 'Guanajuato', category: 'culture', startsAt: new Date('2026-10-09T18:00:00-06:00'), endsAt: new Date('2026-10-25T23:00:00-06:00'), dwellMin: 60, intentCount: 1740, description: 'El festival cultural más grande de Latinoamérica.', heroColor: '#9D2DFF', venue: VENUES.guanajuatoCentro },
   ];
   for (const e of events) {
-    const event = await prisma.event.upsert({
-      where: { slug: e.slug },
-      update: {
-        title: e.title,
-        artist: e.artist ?? null,
-        venueName: e.venueName,
-        city: e.city,
-        countryCode: e.country ?? 'MX',
-        category: e.category,
-        startsAt: e.startsAt,
-        endsAt: e.endsAt,
-        dwellMinimumMin: e.dwellMin ?? 60,
-        description: e.description ?? null,
-        heroColor: e.heroColor ?? null,
-        intentCount: e.intentCount ?? 0,
-        isFeatured: e.isFeatured ?? false,
-        totalCapacity: e.totalCapacity ?? null,
-        badgeTemplateId: TEMPLATE_IDS[e.category],
-      },
-      create: {
-        slug: e.slug,
-        title: e.title,
-        artist: e.artist ?? null,
-        venueName: e.venueName,
-        city: e.city,
-        countryCode: e.country ?? 'MX',
-        category: e.category,
-        startsAt: e.startsAt,
-        endsAt: e.endsAt,
-        dwellMinimumMin: e.dwellMin ?? 60,
-        description: e.description ?? null,
-        heroColor: e.heroColor ?? null,
-        intentCount: e.intentCount ?? 0,
-        isFeatured: e.isFeatured ?? false,
-        totalCapacity: e.totalCapacity ?? null,
-        badgeTemplateId: TEMPLATE_IDS[e.category],
-        status: 'scheduled',
-      },
-    });
-    await setEventGeofence(event.id, e.venue);
+    await upsertFutureEvent(prisma, e);
   }
   console.log(`✓ ${events.length} future events (with geofence polygons)`);
 }
@@ -295,7 +190,7 @@ async function seedPastEvents(): Promise<Record<string, string>> {
       },
     });
     slugToId[e.slug] = event.id;
-    await setEventGeofence(event.id, e.venue);
+    await setEventGeofence(prisma, event.id, e.venue);
   }
   console.log(`✓ ${past.length} past events (with geofence polygons)`);
   return slugToId;

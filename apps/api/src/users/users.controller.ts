@@ -1,5 +1,24 @@
-import { Body, Controller, Get, HttpCode, HttpStatus, Param, Patch, Post } from '@nestjs/common';
-import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
+import {
+  Body,
+  Controller,
+  Delete,
+  Get,
+  HttpCode,
+  HttpStatus,
+  Param,
+  Patch,
+  Post,
+  UploadedFile,
+  UseInterceptors,
+} from '@nestjs/common';
+import { FileInterceptor } from '@nestjs/platform-express';
+import {
+  ApiBearerAuth,
+  ApiBody,
+  ApiConsumes,
+  ApiOperation,
+  ApiTags,
+} from '@nestjs/swagger';
 import type { User } from '@prisma/client';
 import { CurrentUser } from '../auth/decorators/current-user.decorator';
 import { OnboardingDto } from './dto/onboarding.dto';
@@ -22,6 +41,28 @@ export class UsersController {
   @ApiOperation({ summary: 'Patch own profile' })
   updateMe(@CurrentUser() user: User, @Body() dto: UpdateMeDto) {
     return this.users.updateMe(user, dto);
+  }
+
+  @Post('me/avatar')
+  @HttpCode(HttpStatus.OK)
+  @ApiConsumes('multipart/form-data')
+  @ApiBody({
+    schema: {
+      type: 'object',
+      properties: { file: { type: 'string', format: 'binary' } },
+      required: ['file'],
+    },
+  })
+  @UseInterceptors(FileInterceptor('file', { limits: { fileSize: 5 * 1024 * 1024 } }))
+  @ApiOperation({ summary: 'Upload own avatar (multipart) and return updated profile' })
+  uploadAvatar(@CurrentUser() user: User, @UploadedFile() file: Express.Multer.File) {
+    return this.users.uploadAvatar(user, file);
+  }
+
+  @Delete('me/avatar')
+  @ApiOperation({ summary: 'Clear own avatar' })
+  removeAvatar(@CurrentUser() user: User) {
+    return this.users.removeAvatar(user);
   }
 
   @Post('me/onboarding')

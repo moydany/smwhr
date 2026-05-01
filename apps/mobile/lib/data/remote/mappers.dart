@@ -173,27 +173,106 @@ QuestStatus questStatusFromJson(Map<String, dynamic> json) {
   final phase = json['phase'] as String? ?? 'pre';
   final checkin = json['checkin'] as Map<String, dynamic>?;
   final pointsCollected = (json['pointsCollected'] as int?) ?? 0;
+  final inPolygonLocus = (json['inPolygonLocusCount'] as int?) ?? 0;
+  final inPolygonGeolocator = (json['inPolygonGeolocatorCount'] as int?) ?? 0;
+  final firstInPolygonAt = _date(json['firstInPolygonAt']);
+  final targetSpotChecks = (json['targetSpotCheckCount'] as int?) ?? 3;
   final dwellMinutes = (checkin?['dwellMinutes'] as int?) ?? 0;
   final hasIntegrity = checkin?['integrityVerdict'] != null;
+
+  // gpsVerified flips on the first confirmed in-polygon point (locus or
+  // geolocator). The legacy fallback — `pointsCollected > 0` — still
+  // applies for older backends that haven't shipped the in-polygon
+  // counts yet, so the pill / summary widgets keep working.
+  final gpsVerified = firstInPolygonAt != null ||
+      inPolygonLocus > 0 ||
+      inPolygonGeolocator > 0 ||
+      pointsCollected > 0;
+
+  final photosJson = json['photos'] as List?;
+  final photos = <EventPhoto>[
+    if (photosJson != null)
+      for (final p in photosJson.cast<Map<String, dynamic>>())
+        EventPhoto(
+          id: p['id'] as String,
+          publicUrl: p['publicUrl'] as String?,
+          capturedAt: _date(p['createdAt']) ?? DateTime.now(),
+          isInsideGeofence: p['isInsideGeofence'] as bool? ?? false,
+          isWithinTimeWindow: p['isWithinTimeWindow'] as bool? ?? false,
+          isExifValid: p['isExifValid'] as bool? ?? false,
+        ),
+  ];
+
+  final tasksJson = json['tasks'] as List?;
+  final serverTasks = <VerificationTask>[
+    if (tasksJson != null)
+      for (final t in tasksJson.cast<Map<String, dynamic>>())
+        if (_taskIdFromString(t['taskId'] as String?) != null)
+          VerificationTask(
+            id: _taskIdFromString(t['taskId'] as String?)!,
+            status: _taskStatusFromString(t['status'] as String?) ??
+                VerificationTaskStatus.pending,
+            evidenceAt: _date(t['evidenceAt']),
+            progressNumerator: t['progressN'] as int?,
+            progressDenominator: t['progressM'] as int?,
+          ),
+  ];
 
   return QuestStatus(
     eventId: eventId,
     isActive: phase == 'during',
     dwellMinutes: dwellMinutes,
     checks: QuestChecks(
-      gpsVerified: pointsCollected > 0,
+      gpsVerified: gpsVerified,
       deviceTrusted: hasIntegrity,
       integrityActive: hasIntegrity,
       photoCapture: checkin?['photoId'] != null,
     ),
-    startedAt: _date(checkin?['firstPointAt']),
+    startedAt: _date(checkin?['firstPointAt']) ?? firstInPolygonAt,
+    inPolygonGeolocatorCount: inPolygonGeolocator,
+    inPolygonLocusCount: inPolygonLocus,
+    firstInPolygonAt: firstInPolygonAt,
+    targetSpotCheckCount: targetSpotChecks,
+    serverTasks: serverTasks,
+    photos: photos,
+    badgeId: (json['badge'] as Map<String, dynamic>?)?['id'] as String?,
   );
+}
+
+VerificationTaskId? _taskIdFromString(String? raw) {
+  switch (raw) {
+    case 'arrival':
+      return VerificationTaskId.arrival;
+    case 'spot_checks':
+      return VerificationTaskId.spotChecks;
+    case 'photo':
+      return VerificationTaskId.photo;
+    default:
+      // Unknown / retired ids (e.g. legacy 'dwell' from older backends)
+      // are dropped — the consumer renders only what we recognise.
+      return null;
+  }
+}
+
+VerificationTaskStatus? _taskStatusFromString(String? raw) {
+  switch (raw) {
+    case 'done':
+      return VerificationTaskStatus.done;
+    case 'active':
+      return VerificationTaskStatus.active;
+    case 'pending':
+      return VerificationTaskStatus.pending;
+    default:
+      return null;
+  }
 }
 
 DateTime? _date(Object? v) {
   if (v == null) return null;
   if (v is String) {
-    return DateTime.tryParse(v);
+    // API returns timestamps without timezone suffix — treat as UTC, convert to local.
+    final s = (v.endsWith('Z') || v.contains('+') || v.contains('-', 11)) ? v : '${v}Z';
+    return DateTime.tryParse(s)?.toLocal();
   }
   return null;
 }

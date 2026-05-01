@@ -14,7 +14,8 @@ export type AuditEventType =
   | 'BADGE_ISSUED'
   | 'WAITLIST_SIGNUP'
   | 'AUTH_OTP_REQUESTED'
-  | 'AUTH_OTP_VERIFIED';
+  | 'AUTH_OTP_VERIFIED'
+  | 'HANDLE_CHANGED';
 
 interface RecordInput {
   type: AuditEventType;

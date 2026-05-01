@@ -15,7 +15,14 @@ abstract class AuthTokenSource {
 
 /// Adds `Authorization: Bearer <token>` to every outbound request when a
 /// token is present, and on 401 attempts a single refresh + retry.
-class AuthInterceptor extends QueuedInterceptor {
+///
+/// Uses plain [Interceptor] (not [QueuedInterceptor]) on purpose: the
+/// proactive refresh path inside [AuthTokenSource.readAccessToken] re-
+/// enters `onRequest` for the `/auth/refresh` POST itself, and a
+/// queued interceptor would deadlock the outer request waiting on the
+/// inner one. Concurrent refreshes are coalesced inside the token
+/// source via a single in-flight future, so we don't need the queue.
+class AuthInterceptor extends Interceptor {
   AuthInterceptor(this._tokens);
 
   final AuthTokenSource _tokens;

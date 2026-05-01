@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:io';
 import 'dart:math' as math;
 
@@ -5,14 +6,15 @@ import 'package:camera/camera.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:geolocator/geolocator.dart';
 import 'package:go_router/go_router.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:permission_handler/permission_handler.dart' show openAppSettings;
 
-import '../../../core/router/app_router.dart';
 import '../../../core/theme/app_colors.dart';
 import '../../../core/theme/app_spacing.dart';
 import '../../../core/theme/app_typography.dart';
+import '../../../data/local/photo_queue.dart';
 import '../../../data/models/event.dart';
 import '../../../data/models/photo_upload.dart';
 import '../../../data/providers.dart';
@@ -168,113 +170,81 @@ class _CameraScreenState extends ConsumerState<CameraScreen>
         captured = await _moveToEventDir(File(shot.path), event.id);
       }
     } catch (_) {
-      // Capture failed (controller died, OOM, perm revoked) — fall
-      // through; the reveal can still hand back to the active quest.
+      // Capture failed (controller died, OOM, perm revoked) — bail
+      // out gracefully; the user lands back on the event detail.
     }
 
-    final fileToUpload = captured ?? _shimFile(event.id);
-    final metadata = captured != null
-        ? await const ExifReader().read(captured)
-        : const PhotoMetadata();
-
-    final repo = ref.read(questsRepositoryProvider);
-    PhotoUploadResult? result;
-    String? uploadError;
-    try {
-      result = await repo.uploadPhoto(
-        eventId: event.id,
-        photo: fileToUpload,
-        metadata: metadata,
-      );
-    } catch (e) {
-      // Surface the failure so we can diagnose. Without this the user
-      // would land on the active quest screen with the photoCapture
-      // check still off and no idea why.
-      uploadError = e.toString();
-    }
-
-    if (!mounted) return;
-    setState(() => _capturing = false);
-
-    if (uploadError != null) {
-      ScaffoldMessenger.maybeOf(context)?.showSnackBar(
-        SnackBar(
-          backgroundColor: AppColors.errorBackground,
-          duration: const Duration(seconds: 8),
-          content: Text(
-            'No se pudo subir la foto: $uploadError',
-            style: AppTypography.bodySmall.copyWith(color: AppColors.error),
-          ),
-        ),
-      );
+    if (captured == null) {
+      if (!mounted) return;
+      setState(() => _capturing = false);
       context.pop();
       return;
     }
 
-    if (result != null && result.hasWarning) {
-      _showVerificationWarning(result);
+    var metadata = await const ExifReader().read(captured);
+    // EXIF GPS is unreliable: iOS Simulator never embeds it, some
+    // privacy modes strip it, and the `camera` plugin doesn't always
+    // ask CoreLocation to populate it. The active tracker keeps a
+    // position warm via the background stream, so we fall back to
+    // the device's last-known fix when EXIF is silent. Without this
+    // the server short-circuits `isInsideGeofence` to false even when
+    // the user is squarely inside the polygon.
+    if (metadata.exifLatitude == null || metadata.exifLongitude == null) {
+      final pos = await _readDevicePosition();
+      if (pos != null) {
+        metadata = PhotoMetadata(
+          exifTimestamp: metadata.exifTimestamp ?? DateTime.now().toUtc(),
+          exifLatitude: pos.latitude,
+          exifLongitude: pos.longitude,
+          exifRaw: metadata.exifRaw,
+        );
+      }
     }
 
-    // Force-finalize the checkin so the user lands on the real badge.
-    // Production flow runs this via the closeEndedEvents cron 1h after
-    // the event ends; calling it from the client gives the smoke a
-    // satisfying loop close and matches the plan's "Done When".
-    String? badgeId;
-    try {
-      badgeId = await repo.finalizeQuest(event.id);
-    } catch (_) {/* swallow — fall through to graceful fallback */}
-
-    if (!mounted) return;
-
-    if (badgeId != null) {
-      // Hand the captured File to the reveal screen via go_router's
-      // `extra` so the badge frame composites the actual photo
-      // immediately, instead of falling back to the procedural
-      // EventArtwork. Server-side `sharp` composite + `composedImageUrl`
-      // land post-launch.
-      context.go(AppRoutes.reveal(badgeId), extra: captured);
-    } else {
-      // Verifier didn't pass (score below threshold) — most often
-      // because the dwell time hasn't accumulated enough points yet,
-      // OR the integrity / EXIF / geofence checks knocked the score
-      // down. Surface a friendly notice and bounce back to the active
-      // quest screen so the tracker keeps collecting.
-      ScaffoldMessenger.maybeOf(context)?.showSnackBar(
-        SnackBar(
-          backgroundColor: AppColors.surface,
-          duration: const Duration(seconds: 5),
-          content: Text(
-            'Foto guardada. Tu insignia se emitirá cuando '
-            'se cumpla el dwell mínimo del evento.',
-            style: AppTypography.bodySmall.copyWith(
-              color: AppColors.textPrimary,
-            ),
-          ),
-        ),
-      );
-      context.pop();
-    }
-  }
-
-  void _showVerificationWarning(PhotoUploadResult result) {
-    final issues = <String>[];
-    if (!result.isExifValid) issues.add('EXIF incompleto');
-    if (!result.isWithinTimeWindow) issues.add('fuera de la ventana del evento');
-    if (!result.isInsideGeofence) issues.add('fuera del polígono');
-    final messenger = ScaffoldMessenger.maybeOf(context);
-    messenger?.showSnackBar(
-      SnackBar(
-        backgroundColor: AppColors.surface,
-        duration: const Duration(seconds: 6),
-        content: Text(
-          'Foto subida con observaciones: ${issues.join(', ')}. '
-          'Tu insignia se emitirá con score reducido.',
-          style: AppTypography.bodySmall.copyWith(
-            color: AppColors.textPrimary,
-          ),
-        ),
+    // Save locally + queue for the background drainer. We do NOT
+    // await the network upload here — capture has to feel instant or
+    // people stop trusting the shutter.
+    final photoQueue = ref.read(photoQueueProvider);
+    await photoQueue.enqueue(
+      event.id,
+      PendingPhoto(
+        filePath: captured.path,
+        capturedAt: DateTime.now(),
+        metadata: metadata,
       ),
     );
+
+    // Kick the periodic drainer to fire RIGHT NOW so the upload
+    // doesn't sit in the queue for 15s/30min (whatever the cadence
+    // is). Idempotent on TrackingSync's side.
+    final sync = ref.read(trackingSyncProvider);
+    unawaited(sync.drainPendingPhoto(event.id));
+
+    if (!mounted) return;
+    setState(() => _capturing = false);
+    context.pop();
+  }
+
+  /// Reads the device's most recent fix to fill in [PhotoMetadata]
+  /// when EXIF didn't carry GPS. Tries cached `getLastKnownPosition`
+  /// first (instant) and only falls back to a fresh `getCurrentPosition`
+  /// with a tight 2 s timeout — we don't want to delay the snappy
+  /// shutter on a slow GPS lock.
+  Future<Position?> _readDevicePosition() async {
+    try {
+      final last = await Geolocator.getLastKnownPosition();
+      if (last != null) return last;
+    } catch (_) {}
+    try {
+      return await Geolocator.getCurrentPosition(
+        locationSettings: const LocationSettings(
+          accuracy: LocationAccuracy.high,
+          timeLimit: Duration(seconds: 2),
+        ),
+      );
+    } catch (_) {
+      return null;
+    }
   }
 
   Future<File> _moveToEventDir(File source, String eventId) async {
@@ -286,11 +256,6 @@ class _CameraScreenState extends ConsumerState<CameraScreen>
     final dest = File('${dir.path}/${_uuid()}.jpg');
     return source.rename(dest.path).catchError((_) => source.copy(dest.path));
   }
-
-  /// Mock-mode / simulator fallback path. `MockQuestsRepository` doesn't
-  /// touch the file, so the bytes never matter; the path just has to be
-  /// a `File`.
-  File _shimFile(String eventId) => File('/tmp/smwhr-mock-$eventId.jpg');
 
   String _uuid() {
     final ts = DateTime.now().microsecondsSinceEpoch.toRadixString(36);

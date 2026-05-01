@@ -1,3 +1,4 @@
+import 'package:dio/dio.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../core/config/env.dart';
@@ -8,6 +9,7 @@ import '../features/quest/services/permission_flow.dart';
 import '../features/quest/services/quest_tracker.dart';
 import '../features/quest/services/tracking_sync.dart';
 import 'local/event_cache.dart';
+import 'local/photo_queue.dart';
 import 'local/tracking_db.dart';
 import 'mock/mock_auth_repository.dart';
 import 'mock/mock_badges_repository.dart';
@@ -23,6 +25,7 @@ import 'remote/real_events_repository.dart';
 import 'remote/quest_payloads.dart';
 import 'remote/real_quests_repository.dart';
 import 'remote/real_users_repository.dart';
+import 'models/user.dart';
 import 'repositories/auth_repository.dart';
 import 'repositories/badges_repository.dart';
 import 'repositories/events_repository.dart';
@@ -52,6 +55,26 @@ final mockAuthRepositoryProvider =
 /// `main.dart` so the splash never reads it before it's open.
 final authTokenStoreProvider =
     FutureProvider<AuthTokenStore>((ref) async => AuthTokenStore.create());
+
+/// PhotoQueue opens its Hive box once and stays open for the app
+/// session. `main.dart` warms this in parallel with the auth store so
+/// the camera + tracking-sync providers can read it synchronously.
+final photoQueueAsyncProvider =
+    FutureProvider<PhotoQueue>((ref) async => PhotoQueue.open());
+
+/// Synchronous accessor — pulls from [photoQueueAsyncProvider]. Throws
+/// if accessed before the future resolved (mirrors the auth-token-store
+/// pattern); `main.dart` awaits before returning.
+final photoQueueProvider = Provider<PhotoQueue>((ref) {
+  final async = ref.watch(photoQueueAsyncProvider);
+  return async.maybeWhen(
+    data: (q) => q,
+    orElse: () => throw StateError(
+      'PhotoQueue accessed before photoQueueAsyncProvider resolved. '
+      'Await `ref.read(photoQueueAsyncProvider.future)` in main() first.',
+    ),
+  );
+});
 
 final apiClientProvider = Provider<ApiClient>((ref) {
   if (ref.read(useMocksProvider)) {
@@ -110,6 +133,12 @@ final usersRepositoryProvider = Provider<UsersRepository>((ref) {
   return RealUsersRepository(ref.watch(apiClientProvider));
 });
 
+/// Current user (`/me`). Public so screens that mutate the profile can
+/// `ref.invalidate(meProvider)` to force a refetch after a successful save.
+final meProvider = FutureProvider<User?>((ref) async {
+  return ref.watch(usersRepositoryProvider).getMe();
+});
+
 final eventsRepositoryProvider = Provider<EventsRepository>((ref) {
   if (ref.read(useMocksProvider)) {
     final auth = ref.watch(authRepositoryProvider) as MockAuthRepository;
@@ -140,6 +169,9 @@ final questsRepositoryProvider = Provider<QuestsRepository>((ref) {
   return RealQuestsRepository(
     ref.watch(apiClientProvider),
     questTracker: ref.watch(questTrackerProvider),
+    trackingDb: ref.watch(trackingDbProvider),
+    photoQueue: ref.watch(photoQueueProvider),
+    eventsRepository: ref.watch(eventsRepositoryProvider),
   );
 });
 
@@ -165,9 +197,55 @@ final permissionFlowProvider =
 final trackingSyncProvider = Provider<TrackingSync>((ref) {
   final api = ref.watch(apiClientProvider);
   final db = ref.watch(trackingDbProvider);
+  final useMocks = ref.read(useMocksProvider);
+  // Photo drainer is real-mode only; mocks have no upload endpoint.
+  final photoQueue = useMocks ? null : ref.watch(photoQueueProvider);
   return TrackingSync(
     db: db,
     defaultInterval: Duration(seconds: Env.questSyncIntervalSeconds),
+    photoQueue: photoQueue,
+    photoUploadFn: photoQueue == null
+        ? null
+        : ({required String eventId, required photo}) async {
+            // Multipart contract mirrors `RealQuestsRepository.uploadPhoto`
+            // — pinning content-type to image/jpeg keeps Supabase happy.
+            final form = FormData.fromMap({
+              'file': await MultipartFile.fromFile(
+                photo.filePath,
+                contentType: DioMediaType('image', 'jpeg'),
+              ),
+              if (photo.metadata.exifTimestamp != null)
+                'exifTimestamp':
+                    photo.metadata.exifTimestamp!.toIso8601String(),
+              if (photo.metadata.exifLatitude != null)
+                'exifLatitude': photo.metadata.exifLatitude!.toString(),
+              if (photo.metadata.exifLongitude != null)
+                'exifLongitude': photo.metadata.exifLongitude!.toString(),
+            });
+            final res = await api.dio.post<Map<String, dynamic>>(
+              '/quests/$eventId/photo',
+              data: form,
+              options: Options(
+                contentType: 'multipart/form-data',
+                sendTimeout: const Duration(seconds: 60),
+                receiveTimeout: const Duration(seconds: 60),
+              ),
+            );
+            // First photo of the event → kick the finalize/badge
+            // pipeline immediately so the badge is live the moment the
+            // user opens their profile, instead of waiting for the
+            // hourly cron. Subsequent photos already passed the gate
+            // and don't change the score, so we skip. Errors are
+            // swallowed: the cron will retry the next time it runs.
+            final isAdditional =
+                res.data?['isAdditionalPhoto'] == true;
+            if (!isAdditional) {
+              try {
+                await api.dio
+                    .post<Map<String, dynamic>>('/quests/$eventId/finalize');
+              } catch (_) {/* drainer retries on next tick */}
+            }
+          },
     syncFn: ({
       required String eventId,
       required locusEvents,
@@ -183,6 +261,18 @@ final trackingSyncProvider = Provider<TrackingSync>((ref) {
           'clientTimestamp': DateTime.now().toIso8601String(),
         },
       );
+      // Tail every successful sync with an idempotent finalize attempt.
+      // Without this, a transient failure of the finalize call inside
+      // the photo drainer (after the photo upload itself succeeds)
+      // leaves the user permanently stuck with a green checklist and
+      // no badge — the queue clears on upload success, so the post-
+      // upload finalize is never retried. Hitting finalize on every
+      // sync tick gives the verifier a fresh chance the moment the
+      // gates pass. Errors are swallowed: next tick retries.
+      try {
+        await api.dio
+            .post<Map<String, dynamic>>('/quests/$eventId/finalize');
+      } catch (_) {/* sync tick retries */}
     },
   );
 });

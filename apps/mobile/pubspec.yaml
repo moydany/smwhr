@@ -35,6 +35,7 @@ dependencies:
   # Media
   camera: ^0.11.0
   native_exif: ^0.6.2
+  image_picker: ^1.1.2
 
   # Auth (real OAuth deferred to Phase 2)
   sign_in_with_apple: ^6.1.1
@@ -49,6 +50,13 @@ dependencies:
   lottie: ^3.1.2
   cached_network_image: ^3.4.1
 
+  # Maps + deep-links — used by EventLocationMap to render the venue
+  # preview on the event detail screen and to hand off to Apple Maps /
+  # Google Maps via universal links.
+  flutter_map: ^7.0.2
+  latlong2: ^0.9.1
+  url_launcher: ^6.3.0
+
   # Typography (used until TTFs are bundled in polish session 12)
   google_fonts: ^6.2.1
 
@@ -56,12 +64,26 @@ dependencies:
   share_plus: ^10.0.2
   path_provider: ^2.1.4
 
+  # Save composed badge image to the device camera roll. Wraps Photos
+  # (iOS) and MediaStore (Android) with a single API and surfaces the
+  # permission prompt on first call.
+  gal: ^2.3.2
+
   cupertino_icons: ^1.0.8
 
 dev_dependencies:
   flutter_test:
     sdk: flutter
   flutter_lints: ^6.0.0
+  flutter_launcher_icons: ^0.14.1
+
+flutter_launcher_icons:
+  android: true
+  ios: true
+  remove_alpha_ios: true
+  image_path: "assets/branding/app_icon.jpg"
+  min_sdk_android: 21
+  background_color_ios: "#050505"
 
 flutter:
   uses-material-design: true

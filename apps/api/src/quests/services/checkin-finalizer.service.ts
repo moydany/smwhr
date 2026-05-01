@@ -5,6 +5,7 @@ import { NotificationService } from '../../notifications/notification.service';
 import { PrismaService } from '../../prisma/prisma.service';
 import { ReconciliationService } from './reconciliation.service';
 import { VerificationService } from './verification.service';
+import { targetSpotCheckCount } from '../verification-tasks.constants';
 
 @Injectable()
 export class CheckinFinalizerService {
@@ -37,9 +38,21 @@ export class CheckinFinalizerService {
     ]);
 
     const r = this.reconciler.reconcile({ locusEvents, geolocatorPings });
+
+    // Presence inputs — the new verification gate. Spot-check ratio
+    // is what decides "did the user actually attend?" instead of the
+    // old continuous-dwell test. dwellMinutes is still computed by
+    // the reconciler and stored on the Checkin row for audit, but no
+    // longer drives issuance.
+    const inPolygonGeolocatorCount = geolocatorPings.filter((p) => p.isInsidePolygon).length;
+    const inPolygonLocusCount = locusEvents.filter((e) => e.isInsidePolygon).length;
+    const target = targetSpotCheckCount(event.startsAt, event.endsAt);
+    const hasArrived = inPolygonGeolocatorCount > 0 || inPolygonLocusCount > 0;
+
     const score = this.verifier.score({
-      dwellMinutes: r.dwellMinutes,
-      dwellMinimumMin: event.dwellMinimumMin,
+      inPolygonGeolocatorCount,
+      targetSpotCheckCount: target,
+      hasArrived,
       totalPointsCollected: r.totalPoints,
       agreementScore: r.agreementScore,
       integrityVerdict: existingCheckin?.integrityVerdict ?? null,
@@ -113,11 +126,12 @@ export class CheckinFinalizerService {
   }
 
   private scoreReason(
-    s: { parts: { dwell: number; tracking: number; crossValidation: number; integrity: number; photo: number; penaltyMultiplier: number } },
+    s: { parts: { presence: number; presenceRatio: number; tracking: number; crossValidation: number; integrity: number; photo: number; penaltyMultiplier: number } },
     r: { primarySource: string },
   ): string {
     const p = s.parts;
-    return `dwell=${p.dwell} tracking=${p.tracking} cross=${p.crossValidation} integrity=${p.integrity} photo=${p.photo} penalty=${p.penaltyMultiplier} (source=${r.primarySource})`;
+    const ratio = p.presenceRatio.toFixed(2);
+    return `presence=${p.presence}(${ratio}) tracking=${p.tracking} cross=${p.crossValidation} integrity=${p.integrity} photo=${p.photo} penalty=${p.penaltyMultiplier} (source=${r.primarySource})`;
   }
 
   private async issueBadge(
@@ -130,7 +144,18 @@ export class CheckinFinalizerService {
     const existing = await this.prisma.badge.findUnique({
       where: { userId_eventId: { userId, eventId } },
     });
-    if (existing) return existing.id;
+    if (existing) {
+      if (!existing.composedImageUrl && photoId) {
+        const photo = await this.prisma.photo.findUnique({ where: { id: photoId } });
+        if (photo?.publicUrl) {
+          await this.prisma.badge.update({
+            where: { id: existing.id },
+            data: { composedImageUrl: photo.publicUrl },
+          });
+        }
+      }
+      return existing.id;
+    }
 
     const tplId = templateId ?? (await this.fallbackTemplateId(eventId));
 

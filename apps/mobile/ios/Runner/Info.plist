@@ -55,6 +55,8 @@
 	<string>smwhr usa datos de movimiento para ahorrar batería durante quests.</string>
 	<key>NSCameraUsageDescription</key>
 	<string>smwhr usa la cámara para capturar tu momento en el evento.</string>
+	<key>NSPhotoLibraryAddUsageDescription</key>
+	<string>smwhr guarda tu insignia compuesta en la galería cuando le das a "Save to camera roll".</string>
 	<key>UIBackgroundModes</key>
 	<array>
 		<string>location</string>

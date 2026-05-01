@@ -1,5 +1,6 @@
 import 'dart:math';
 
+import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 
 import '../../../core/theme/app_colors.dart';
@@ -30,6 +31,7 @@ class EventArtwork extends StatelessWidget {
   Widget build(BuildContext context) {
     final color = _ambientFor(event.category);
     final radius = borderRadius ?? BorderRadius.circular(0);
+    final heroUrl = event.heroImageUrl;
     return ClipRRect(
       borderRadius: radius,
       child: AspectRatio(
@@ -37,7 +39,9 @@ class EventArtwork extends StatelessWidget {
         child: Stack(
           fit: StackFit.expand,
           children: [
-            // Base surface
+            // Base surface — also the placeholder while the network
+            // image streams in. The procedural layers below render
+            // first so we never flash a blank black box.
             Container(color: AppColors.surfaceElevated),
             // Vertical depth gradient (subtle)
             Container(
@@ -80,6 +84,20 @@ class EventArtwork extends StatelessWidget {
                 ),
               ),
             ],
+            // Hero photo overlay — promoter / artist artwork when the
+            // backend has it. Sits on top of the procedural layers so
+            // the dark surface + glow keep showing through any
+            // transparent edges of the source image, and so the
+            // procedural artwork is the graceful fallback while the
+            // network image is loading or unavailable.
+            if (heroUrl != null && heroUrl.isNotEmpty)
+              CachedNetworkImage(
+                imageUrl: heroUrl,
+                fit: BoxFit.cover,
+                fadeInDuration: const Duration(milliseconds: 260),
+                placeholder: (_, _) => const SizedBox.shrink(),
+                errorWidget: (_, _, _) => const SizedBox.shrink(),
+              ),
           ],
         ),
       ),

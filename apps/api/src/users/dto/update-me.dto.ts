@@ -9,7 +9,16 @@ import {
 } from 'class-validator';
 import { VALID_INTERESTS, type Interest } from './onboarding.dto';
 
+export const VALID_LANGUAGES = ['es', 'en'] as const;
+export type Language = (typeof VALID_LANGUAGES)[number];
+
 export class UpdateMeDto {
+  @ApiProperty({ required: false, minLength: 3, maxLength: 20 })
+  @IsOptional()
+  @IsString()
+  @Length(3, 20)
+  handle?: string;
+
   @ApiProperty({ required: false })
   @IsOptional()
   @IsString()
@@ -34,6 +43,11 @@ export class UpdateMeDto {
   @ArrayMaxSize(VALID_INTERESTS.length)
   @IsIn(VALID_INTERESTS as readonly string[], { each: true })
   interests?: Interest[];
+
+  @ApiProperty({ required: false, enum: VALID_LANGUAGES })
+  @IsOptional()
+  @IsIn(VALID_LANGUAGES as readonly string[])
+  language?: Language;
 
   @ApiProperty({ required: false })
   @IsOptional()

@@ -137,15 +137,38 @@ class _FeaturedPill extends StatelessWidget {
   }
 }
 
-class _BottomRow extends ConsumerWidget {
+class _BottomRow extends ConsumerStatefulWidget {
   final Event event;
   const _BottomRow({required this.event});
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    final intentCountAsync = ref.watch(_intentCountProvider(event.id));
-    final intentAsync = ref.watch(_hasIntentProvider(event.id));
-    final hasIntent = intentAsync.maybeWhen(
+  ConsumerState<_BottomRow> createState() => _BottomRowState();
+}
+
+class _BottomRowState extends ConsumerState<_BottomRow> {
+  /// Optimistic local copy of the event. The button updates this
+  /// instantly on tap so the user gets immediate feedback; the network
+  /// call replaces it with the server's authoritative version (which
+  /// also bumps `intentCount`). Reverts on error.
+  late Event _local = widget.event;
+  bool _busy = false;
+
+  @override
+  void didUpdateWidget(covariant _BottomRow old) {
+    super.didUpdateWidget(old);
+    // The home feed refresh hands us a new prop after pull-to-refresh.
+    // Adopt the fresh values whenever the parent rerenders with a
+    // different intent count or the same event id.
+    if (old.event.id != widget.event.id ||
+        old.event.intentCount != widget.event.intentCount) {
+      _local = widget.event;
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final hasIntentAsync = ref.watch(_hasIntentProvider(_local.id));
+    final hasIntent = hasIntentAsync.maybeWhen(
       data: (v) => v,
       orElse: () => false,
     );
@@ -161,33 +184,49 @@ class _BottomRow extends ConsumerWidget {
         ),
         const SizedBox(width: AppSpacing.xs),
         Text(
-          '${_compactCount(intentCountAsync.value ?? event.intentCount)} '
-          'going',
+          '${_compactCount(_local.intentCount)} going',
           style: AppTypography.monoSmall.copyWith(
             color: AppColors.textSecondary,
           ),
         ),
         const Spacer(),
         SmwhrButton(
-          label: hasIntent ? "You're in" : "I'll be there",
+          label: _busy
+              ? '…'
+              : (hasIntent ? "You're in" : "I'll be there"),
           variant: hasIntent
               ? SmwhrButtonVariant.dark
               : SmwhrButtonVariant.primary,
           fullWidth: false,
-          onPressed: () async {
-            HapticFeedback.mediumImpact();
-            final repo = ref.read(eventsRepositoryProvider);
-            if (hasIntent) {
-              await repo.removeIntent(event.id);
-            } else {
-              await repo.setIntent(event.id);
-            }
-            // Refresh local providers
-            ref.invalidate(_hasIntentProvider(event.id));
-          },
+          isLoading: _busy,
+          onPressed: _busy ? null : () => _toggleIntent(hasIntent),
         ),
       ],
     );
+  }
+
+  Future<void> _toggleIntent(bool hasIntent) async {
+    HapticFeedback.mediumImpact();
+    setState(() => _busy = true);
+    try {
+      final repo = ref.read(eventsRepositoryProvider);
+      final updated = hasIntent
+          ? await repo.removeIntent(_local.id)
+          : await repo.setIntent(_local.id);
+      if (!mounted) return;
+      setState(() => _local = updated);
+      // Bump the cached `_hasIntentProvider` so any other widget on
+      // the home (or this card itself, on next rebuild) reflects the
+      // change without an extra network hit.
+      ref.invalidate(_hasIntentProvider(_local.id));
+    } catch (_) {
+      // Leave the optimistic state alone — the provider invalidate
+      // below will refetch and snap us back to truth.
+      if (!mounted) return;
+      ref.invalidate(_hasIntentProvider(_local.id));
+    } finally {
+      if (mounted) setState(() => _busy = false);
+    }
   }
 
   static String _compactCount(int n) {
@@ -199,15 +238,13 @@ class _BottomRow extends ConsumerWidget {
   }
 }
 
-/// Per-event helper providers — kept private to this widget.
-final _intentCountProvider =
-    StreamProvider.family<int, String>((ref, eventId) {
-  final repo = ref.watch(eventsRepositoryProvider);
-  return repo.watchIntentCount(eventId);
-});
-
+/// Per-event helper provider for the cached "has the user RSVP'd"
+/// boolean. AutoDispose so navigating away from the home stops
+/// holding onto stale state. Intent count comes from the [Event]
+/// prop directly — `setIntent` returns an updated Event so we don't
+/// need a polling stream on the home feed.
 final _hasIntentProvider =
-    FutureProvider.family<bool, String>((ref, eventId) async {
+    FutureProvider.autoDispose.family<bool, String>((ref, eventId) async {
   final repo = ref.watch(eventsRepositoryProvider);
   return repo.hasIntent(eventId);
 });

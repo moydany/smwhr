@@ -20,6 +20,32 @@ async function bootstrap() {
   const app = await NestFactory.create(AppModule);
   const config = app.get(ConfigService);
   const logger = new Logger('Bootstrap');
+  const httpLogger = new Logger('HTTP');
+
+  // Diagnostic: one line per request → `<METHOD> <URL> <UA?> → <STATUS>
+  // <BYTES> · <MS>ms`. Lives at the very top of the middleware chain
+  // so it logs even for requests that fail validation or auth — the
+  // mobile sometimes can't tell whether its request actually hit the
+  // server, and this is the cheap answer.
+  app.use(
+    (
+      req: { method: string; originalUrl: string; headers: Record<string, string | string[] | undefined> },
+      res: { statusCode: number; on: (event: string, cb: () => void) => void; getHeader: (name: string) => string | number | string[] | undefined },
+      next: () => void,
+    ) => {
+      const t0 = Date.now();
+      res.on('finish', () => {
+        const ms = Date.now() - t0;
+        const len = res.getHeader('content-length') ?? '-';
+        const ua = req.headers['user-agent'];
+        const uaShort = typeof ua === 'string' ? ua.slice(0, 32) : '-';
+        httpLogger.log(
+          `${req.method} ${req.originalUrl} → ${res.statusCode} ${len}B · ${ms}ms · ua=${uaShort}`,
+        );
+      });
+      next();
+    },
+  );
 
   app.use(
     helmet({

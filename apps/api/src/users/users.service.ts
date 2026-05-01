@@ -3,15 +3,25 @@ import type { User } from '@prisma/client';
 import { AuditService } from '../audit/audit.service';
 import { ApiException } from '../common/exceptions/api.exception';
 import { PrismaService } from '../prisma/prisma.service';
+import { StorageService } from '../quests/storage.service';
 import { OnboardingDto } from './dto/onboarding.dto';
 import { UpdateMeDto } from './dto/update-me.dto';
 import { normalizeHandle, validateHandle } from './utils/handle.validator';
+
+const VALID_AVATAR_MIMETYPES = new Set([
+  'image/jpeg',
+  'image/png',
+  'image/heic',
+  'image/heif',
+  'image/webp',
+]);
 
 @Injectable()
 export class UsersService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly audit: AuditService,
+    private readonly storage: StorageService,
   ) {}
 
   async getMe(user: User): Promise<User> {
@@ -79,16 +89,77 @@ export class UsersService {
   }
 
   async updateMe(user: User, dto: UpdateMeDto): Promise<User> {
-    return this.prisma.user.update({
+    let nextHandle: string | undefined;
+    if (dto.handle != null) {
+      const v = validateHandle(dto.handle);
+      if (!v.ok) {
+        throw new ApiException(HttpStatus.BAD_REQUEST, 'INVALID_HANDLE', v.reason);
+      }
+      const candidate = normalizeHandle(dto.handle);
+      // Skip the uniqueness round-trip when the user submitted their
+      // current handle untouched (common case from the edit form).
+      if (candidate !== user.handle) {
+        const existing = await this.prisma.user.findUnique({ where: { handle: candidate } });
+        if (existing && existing.id !== user.id) {
+          throw new ApiException(HttpStatus.CONFLICT, 'HANDLE_TAKEN', 'Handle already taken');
+        }
+        nextHandle = candidate;
+      }
+    }
+
+    const updated = await this.prisma.user.update({
       where: { id: user.id },
       data: {
+        handle: nextHandle ?? undefined,
         displayName: dto.displayName ?? undefined,
         bio: dto.bio ?? undefined,
         city: dto.city ?? undefined,
         interests: dto.interests ?? undefined,
+        language: dto.language ?? undefined,
         pushToken: dto.pushToken ?? undefined,
         pushPlatform: dto.pushPlatform ?? undefined,
       },
+    });
+
+    if (nextHandle != null) {
+      await this.audit.record({
+        type: 'HANDLE_CHANGED',
+        userId: updated.id,
+        metadata: { from: user.handle, to: nextHandle },
+      });
+    }
+    return updated;
+  }
+
+  async uploadAvatar(user: User, file: Express.Multer.File): Promise<User> {
+    if (!file || !file.buffer) {
+      throw new ApiException(HttpStatus.BAD_REQUEST, 'AVATAR_FILE_REQUIRED', 'Avatar file is required');
+    }
+    if (!VALID_AVATAR_MIMETYPES.has(file.mimetype)) {
+      throw new ApiException(
+        HttpStatus.BAD_REQUEST,
+        'AVATAR_MIMETYPE_UNSUPPORTED',
+        `Unsupported mimetype ${file.mimetype}`,
+      );
+    }
+    const upload = await this.storage.uploadAvatar(user.id, {
+      buffer: file.buffer,
+      mimetype: file.mimetype,
+      originalname: file.originalname,
+    });
+    if (!upload.publicUrl) {
+      throw new ApiException(HttpStatus.BAD_GATEWAY, 'STORAGE_SIGN_FAILED', 'Could not sign avatar URL');
+    }
+    return this.prisma.user.update({
+      where: { id: user.id },
+      data: { avatarUrl: upload.publicUrl },
+    });
+  }
+
+  async removeAvatar(user: User): Promise<User> {
+    return this.prisma.user.update({
+      where: { id: user.id },
+      data: { avatarUrl: null },
     });
   }
 }

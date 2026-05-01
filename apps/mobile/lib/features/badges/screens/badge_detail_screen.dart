@@ -158,13 +158,12 @@ class _Stats extends StatelessWidget {
             label: 'Issued',
             value: _formatDate(badge.issuedAt),
           ),
-          const SizedBox(height: AppSpacing.sm),
-          _StatRow(
-            label: 'Verification',
-            value:
-                '${(badge.verificationScore * 100).toStringAsFixed(0)}%',
-            highlight: true,
-          ),
+          // Verification % intentionally hidden until R0.2: today's
+          // sub-signals (EXIF time-window, integrity stub, locus/geo
+          // cross-validation) are noisy enough to render scores in the
+          // 50–80% band even on legit verified badges. Surfacing those
+          // numbers undercuts the "VERIFIED ✓" stamp. The score still
+          // lives on the row server-side for audit + future tuning.
           const SizedBox(height: AppSpacing.sm),
           _StatRow(label: 'Venue', value: badge.venueName),
           const SizedBox(height: AppSpacing.sm),
@@ -190,13 +189,11 @@ class _Stats extends StatelessWidget {
 class _StatRow extends StatelessWidget {
   final String label;
   final String value;
-  final bool highlight;
   final bool mono;
 
   const _StatRow({
     required this.label,
     required this.value,
-    this.highlight = false,
     this.mono = false,
   });
 
@@ -217,11 +214,7 @@ class _StatRow extends StatelessWidget {
             textAlign: TextAlign.end,
             overflow: TextOverflow.ellipsis,
             style: (mono ? AppTypography.monoSmall : AppTypography.bodyMedium)
-                .copyWith(
-              color: highlight
-                  ? AppColors.accent
-                  : AppColors.textPrimary,
-            ),
+                .copyWith(color: AppColors.textPrimary),
           ),
         ),
       ],

@@ -73,14 +73,35 @@ class QuestTracker {
       onEvent: (e) => trackingDb.appendLocusEvent(eventId, e),
     );
 
-    await geolocatorTracker.start(
+    // Random spot-checks across the event window — unpredictable timing
+    // is the verification feature here, not just a battery-saver tweak.
+    // Target count mirrors what the backend reports in `targetSpotCheckCount`
+    // (≈one per half-hour, clamped 3–6); deriving it locally is fine
+    // because the formula is the same and the UI uses the backend value
+    // for the "N/M" display anyway. `endsAt` defaults to startsAt + 4h
+    // when missing, matching `Event.isLive`'s fallback so the rest of
+    // the app stays consistent.
+    final eventEndsAt =
+        event.endsAt ?? event.startsAt.add(const Duration(hours: 4));
+    final targetCount =
+        _targetSpotCheckCount(eventEndsAt.difference(event.startsAt));
+    await geolocatorTracker.startRandomized(
       eventId: eventId,
       polygon: event.geofencePolygon,
+      eventEndsAt: eventEndsAt,
+      targetCount: targetCount,
       onPing: (p) => trackingDb.appendGeolocatorPing(eventId, p),
     );
 
     trackingSync.schedulePeriodic(eventId);
     _activeEventId = eventId;
+  }
+
+  static int _targetSpotCheckCount(Duration eventDuration) {
+    final raw = (eventDuration.inMinutes / 30).round();
+    if (raw < 3) return 3;
+    if (raw > 6) return 6;
+    return raw;
   }
 
   Future<void> stopQuest(String eventId) async {

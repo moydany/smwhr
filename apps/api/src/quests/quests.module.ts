@@ -7,6 +7,7 @@ import { CheckinFinalizerService } from './services/checkin-finalizer.service';
 import { GeoService } from './services/geo.service';
 import { ReconciliationService } from './services/reconciliation.service';
 import { VerificationService } from './services/verification.service';
+import { VerificationTasksService } from './services/verification-tasks.service';
 import { StorageService } from './storage.service';
 
 @Module({
@@ -18,9 +19,16 @@ import { StorageService } from './storage.service';
     GeoService,
     ReconciliationService,
     VerificationService,
+    VerificationTasksService,
     CheckinFinalizerService,
     CloseEndedEventsCron,
   ],
-  exports: [QuestsService, StorageService, GeoService, CheckinFinalizerService],
+  exports: [
+    QuestsService,
+    StorageService,
+    GeoService,
+    CheckinFinalizerService,
+    VerificationTasksService,
+  ],
 })
 export class QuestsModule {}

@@ -102,9 +102,24 @@ class HomeFeedScreen extends ConsumerWidget {
 /// drops past events.
 final _homeEventsProvider = FutureProvider.autoDispose<List<Event>>(
   (ref) async {
-    final repo = ref.watch(eventsRepositoryProvider);
-    final events = await repo.listEvents(limit: 30);
-    return events.where((e) => !e.isPast).toList();
+    const tag = 'smwhr.home';
+    final t0 = DateTime.now().millisecondsSinceEpoch;
+    debugPrint('[$tag] → listEvents(limit=30) start');
+    try {
+      final repo = ref.watch(eventsRepositoryProvider);
+      final events = await repo.listEvents(limit: 30);
+      final upcoming = events.where((e) => !e.isPast).toList();
+      final ms = DateTime.now().millisecondsSinceEpoch - t0;
+      debugPrint(
+        '[$tag] ← listEvents ok: ${events.length} total, ${upcoming.length} upcoming · ${ms}ms',
+      );
+      return upcoming;
+    } catch (e, st) {
+      final ms = DateTime.now().millisecondsSinceEpoch - t0;
+      debugPrint('[$tag] ✗ listEvents failed · ${ms}ms · $e');
+      debugPrint('[$tag]   stack: $st');
+      rethrow;
+    }
   },
 );
 

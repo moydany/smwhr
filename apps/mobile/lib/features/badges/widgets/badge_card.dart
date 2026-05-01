@@ -1,3 +1,4 @@
+import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart' hide Badge;
 
 import '../../../core/theme/app_colors.dart';
@@ -64,7 +65,14 @@ class BadgeCard extends StatelessWidget {
           borderRadius: BorderRadius.circular(AppSpacing.radiusSmall),
           child: photoOverride != null
               ? Image(image: photoOverride!, fit: BoxFit.cover)
-              : EventArtwork(event: event, large: true),
+              : badge.composedBadgeUrl != null
+                  ? CachedNetworkImage(
+                      imageUrl: badge.composedBadgeUrl!,
+                      fit: BoxFit.cover,
+                      placeholder: (context, url) => EventArtwork(event: event, large: true),
+                      errorWidget: (context, url, err) => EventArtwork(event: event, large: true),
+                    )
+                  : EventArtwork(event: event, large: true),
         ),
         serialLabel: 'SMWHR ${badge.serialLabel}',
         verified: true,

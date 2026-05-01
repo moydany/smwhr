@@ -16,8 +16,9 @@ import '../../features/events/screens/home_feed_screen.dart';
 import '../../features/onboarding/screens/identity_screen.dart';
 import '../../features/onboarding/screens/interests_screen.dart';
 import '../../features/onboarding/screens/permissions_screen.dart';
+import '../../features/profile/screens/edit_profile_screen.dart';
 import '../../features/profile/screens/profile_screen.dart';
-import '../../features/quest/screens/active_quest_screen.dart';
+import '../../features/profile/screens/quest_history_screen.dart';
 import '../../features/share/screens/share_screen.dart';
 import '../config/env.dart';
 import 'transitions.dart';
@@ -32,11 +33,12 @@ class AppRoutes {
   static const onboardingPermissions = '/onboarding/permissions';
   static const home = '/home';
   static String eventDetail(String slug) => '/events/$slug';
-  static String activeQuest(String eventId) => '/quest/$eventId';
   static String camera(String eventId) => '/camera/$eventId';
   static String reveal(String badgeId) => '/reveal/$badgeId';
   static String badgeDetail(String badgeId) => '/badge/$badgeId';
   static const profileMe = '/profile';
+  static const profileEdit = '/profile/edit';
+  static const questHistory = '/quests/history';
   static String profileOf(String handle) => '/profile/$handle';
   static String share(String badgeId) => '/share/$badgeId';
   static const debug = '/_debug';
@@ -155,11 +157,6 @@ final appRouterProvider = Provider<GoRouter>((ref) {
             EventDetailScreen(slug: state.pathParameters['slug']!),
       ),
       GoRoute(
-        path: '/quest/:eventId',
-        builder: (_, state) =>
-            ActiveQuestScreen(eventId: state.pathParameters['eventId']!),
-      ),
-      GoRoute(
         path: '/camera/:eventId',
         pageBuilder: (context, state) => slideUp(
           key: state.pageKey,
@@ -192,6 +189,19 @@ final appRouterProvider = Provider<GoRouter>((ref) {
       GoRoute(
         path: AppRoutes.profileMe,
         builder: (_, _) => const ProfileScreen(),
+      ),
+      // Edit must be declared before `/profile/:handle` so go_router does
+      // not interpret "edit" as a handle.
+      GoRoute(
+        path: AppRoutes.profileEdit,
+        pageBuilder: (context, state) => slideUp(
+          key: state.pageKey,
+          child: const EditProfileScreen(),
+        ),
+      ),
+      GoRoute(
+        path: AppRoutes.questHistory,
+        builder: (_, _) => const QuestHistoryScreen(),
       ),
       GoRoute(
         path: '/profile/:handle',

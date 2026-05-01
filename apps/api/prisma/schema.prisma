@@ -50,6 +50,7 @@ model User {
   photos                     Photo[]
   locusEvents                LocusEvent[]
   geolocatorPings            GeolocatorPing[]
+  verificationTasks          VerificationTask[]
 
   @@index([email])
   @@index([handle])
@@ -109,6 +110,8 @@ model Event {
   badges            Badge[]
   locusEvents       LocusEvent[]
   geolocatorPings   GeolocatorPing[]
+  verificationTasks VerificationTask[]
+  photos            Photo[]
 
   @@index([category, startsAt])
   @@index([city, startsAt])
@@ -254,6 +257,12 @@ model Photo {
   id                 String    @id @default(uuid()) @db.Uuid
   userId             String    @db.Uuid
 
+  /// Optional back-pointer to the event the photo was captured for.
+  /// Nullable for legacy rows that pre-date this column; new uploads
+  /// always set it so the per-event mini-gallery query is a simple
+  /// (userId, eventId) lookup.
+  eventId            String?   @db.Uuid
+
   storagePath        String
   publicUrl          String?
 
@@ -275,9 +284,11 @@ model Photo {
   updatedAt          DateTime  @updatedAt
 
   user               User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  event              Event?    @relation(fields: [eventId], references: [id], onDelete: Cascade)
   checkin            Checkin?
 
   @@index([userId])
+  @@index([userId, eventId])
   @@map("photos")
 }
 
@@ -338,6 +349,48 @@ model Badge {
   @@index([eventId, serialNumber])
   @@index([userId, awardedAt])
   @@map("badges")
+}
+
+// ============================================================
+// VERIFICATION TASKS (per-user/event ledger)
+// ============================================================
+//
+// Persisted task ledger feeding both the active-quest UI checklist and
+// future task-based scoring. One row per (userId, eventId, taskId) — the
+// taskId is one of the values in `VerificationTaskId` (mobile mirrors
+// the same enum). State transitions are upserted by
+// `VerificationTasksService.recompute` after each `quests/sync` and
+// `quests/photo` call, so the ledger is always at most one sync behind
+// the underlying signals.
+//
+// `progressN`/`progressM` are only populated for counted tasks (e.g.
+// spot_checks). `evidenceRefId` optionally points at the source row
+// that flipped the task to `done` (LocusEvent / GeolocatorPing /
+// Photo / Checkin id) — useful for audit + dispute paths post-launch.
+
+model VerificationTask {
+  id              String    @id @default(uuid()) @db.Uuid
+  userId          String    @db.Uuid
+  eventId         String    @db.Uuid
+
+  taskId          String    @db.VarChar(40)
+  status          String    @db.VarChar(20)
+
+  evidenceAt      DateTime?
+  evidenceRefId   String?   @db.Uuid
+  progressN       Int?
+  progressM       Int?
+
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+
+  user            User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  event           Event     @relation(fields: [eventId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, eventId, taskId])
+  @@index([userId, eventId])
+  @@index([eventId, taskId])
+  @@map("verification_tasks")
 }
 
 // ============================================================

@@ -38,7 +38,7 @@ class _SplashAuthScreenState extends ConsumerState<SplashAuthScreen>
   late final Animation<double> _buttonsOpacity;
   late final AnimationController _dotPulse;
 
-  _Provider? _busyProvider;
+  bool _opening = false;
 
   @override
   void initState() {
@@ -82,30 +82,9 @@ class _SplashAuthScreenState extends ConsumerState<SplashAuthScreen>
     super.dispose();
   }
 
-  Future<void> _signIn(_Provider provider) async {
-    if (_busyProvider != null) return;
-    setState(() => _busyProvider = provider);
-
-    final repo = ref.read(authRepositoryProvider);
-    AuthResult result;
-    try {
-      result = switch (provider) {
-        _Provider.apple => await repo.signInWithApple(),
-        _Provider.google => await repo.signInWithGoogle(),
-      };
-    } catch (e) {
-      if (!mounted) return;
-      setState(() => _busyProvider = null);
-      _showError(e.toString());
-      return;
-    }
-    if (!mounted) return;
-    setState(() => _busyProvider = null);
-    _handleResult(result);
-  }
-
   Future<void> _openEmailSheet() async {
-    if (_busyProvider != null) return;
+    if (_opening) return;
+    _opening = true;
     final result = await showModalBottomSheet<AuthResult>(
       context: context,
       isScrollControlled: true,
@@ -115,6 +94,7 @@ class _SplashAuthScreenState extends ConsumerState<SplashAuthScreen>
         repo: ref.read(authRepositoryProvider),
       ),
     );
+    _opening = false;
     if (!mounted || result == null) return;
     _handleResult(result);
   }
@@ -211,42 +191,11 @@ class _SplashAuthScreenState extends ConsumerState<SplashAuthScreen>
 
                       Opacity(
                         opacity: _buttonsOpacity.value,
-                        child: Column(
-                          children: [
-                            SmwhrButton(
-                              label: 'Continue with Apple',
-                              variant: SmwhrButtonVariant.white,
-                              leading: const Padding(
-                                padding: EdgeInsets.only(left: AppSpacing.md),
-                                child: Icon(Icons.apple, size: 20),
-                              ),
-                              isLoading: _busyProvider == _Provider.apple,
-                              onPressed: _busyProvider == null
-                                  ? () => _signIn(_Provider.apple)
-                                  : null,
-                            ),
-                            const SizedBox(height: AppSpacing.xs),
-                            SmwhrButton(
-                              label: 'Continue with Google',
-                              variant: SmwhrButtonVariant.dark,
-                              leading: const Padding(
-                                padding: EdgeInsets.only(left: AppSpacing.md),
-                                child: _GoogleGlyph(),
-                              ),
-                              isLoading: _busyProvider == _Provider.google,
-                              onPressed: _busyProvider == null
-                                  ? () => _signIn(_Provider.google)
-                                  : null,
-                            ),
-                            const SizedBox(height: AppSpacing.xs),
-                            SmwhrButton(
-                              label: 'Continue with email',
-                              variant: SmwhrButtonVariant.outline,
-                              isLoading: false,
-                              onPressed:
-                                  _busyProvider == null ? _openEmailSheet : null,
-                            ),
-                          ],
+                        child: SmwhrButton(
+                          label: 'Continue with email',
+                          variant: SmwhrButtonVariant.outline,
+                          isLoading: false,
+                          onPressed: _openEmailSheet,
                         ),
                       ),
 
@@ -276,8 +225,6 @@ class _SplashAuthScreenState extends ConsumerState<SplashAuthScreen>
     );
   }
 }
-
-enum _Provider { apple, google }
 
 /// Bottom sheet that walks the user through the email magic-link OTP flow.
 /// Two stages: email entry → 6-digit code entry. On success it pops the
@@ -603,27 +550,3 @@ class _GeoPillState extends State<_GeoPill>
   }
 }
 
-/// Lightweight stand-in for the Google "G" mark — small ringed glyph.
-class _GoogleGlyph extends StatelessWidget {
-  const _GoogleGlyph();
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      width: 20,
-      height: 20,
-      alignment: Alignment.center,
-      decoration: BoxDecoration(
-        borderRadius: BorderRadius.circular(10),
-        border: Border.all(color: AppColors.textPrimary, width: 1.2),
-      ),
-      child: Text(
-        'G',
-        style: AppTypography.buttonMedium.copyWith(
-          fontSize: 11,
-          height: 1,
-        ),
-      ),
-    );
-  }
-}

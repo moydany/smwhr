@@ -1,0 +1,54 @@
+# Build context = repo root (Railway uses dockerfilePath=apps/api/Dockerfile).
+# Trim heavy/irrelevant paths so the build context tar stays small.
+
+# VCS / CI
+.git
+.gitignore
+.github
+.vscode
+.idea
+
+# OS / editor
+.DS_Store
+Thumbs.db
+*.swp
+
+# Node deps & build outputs (rebuilt inside the image)
+**/node_modules
+**/dist
+**/build
+**/.next
+**/.turbo
+**/coverage
+**/.nyc_output
+.pnpm-store
+
+# Env
+**/.env
+**/.env.local
+**/.env.production
+**/.env.master
+!**/.env.example
+
+# Logs
+**/*.log
+**/npm-debug.log*
+**/pnpm-debug.log*
+**/yarn-error.log*
+
+# Other workspaces — API does not need them
+apps/mobile
+apps/landing/.next
+apps/landing/.vercel
+
+# Misc dev artifacts
+.playwright-mcp
+design
+scripts
+tmp
+docs
+README.md
+docker-compose.yml
+
+# Prisma generated client (regenerated in build)
+apps/api/prisma/generated

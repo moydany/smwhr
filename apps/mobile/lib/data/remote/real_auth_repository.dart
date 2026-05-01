@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:dio/dio.dart';
+import 'package:flutter/foundation.dart' show debugPrint;
 
 import '../../shared/utils/handle_validator.dart';
 import '../models/user.dart';
@@ -28,18 +29,26 @@ class RealAuthRepository implements AuthRepository {
   AuthState _currentState = const AuthSignedOut();
 
   void _hydrateFromStore() {
+    const tag = 'smwhr.auth';
     final session = _store.session;
     if (session == null) {
+      debugPrint('[$tag] hydrate: no session → SignedOut');
       _emit(const AuthSignedOut());
       return;
     }
     final cached = _store.cachedUser;
     if (cached != null) {
+      debugPrint(
+        '[$tag] hydrate: cached user @${cached.handle} → SignedIn, /me refresh in bg',
+      );
       // Best UX path: show cached user immediately, refresh in
       // background so a stale profile or revoked session gets fixed
       // without blocking the first frame.
       _emit(AuthSignedIn(cached));
     } else {
+      debugPrint(
+        '[$tag] hydrate: session present but no cached user → Authenticating',
+      );
       // Session exists but no cached user (rare — verify saved the
       // session then /me failed). Show authenticating until /me lands.
       _emit(const AuthAuthenticating());
@@ -184,29 +193,55 @@ class RealAuthRepository implements AuthRepository {
   }
 
   Future<void> _refreshMe() async {
+    const tag = 'smwhr.auth';
     try {
       final user = await _fetchMe();
       await _store.saveCachedUser(user);
+      debugPrint('[$tag] refreshMe: ok @${user.handle}');
       _emit(AuthSignedIn(user));
     } on DioException catch (e) {
-      // 401 → session is dead; clear and emit signed out so the splash flow
-      // can pick the user back up cleanly.
-      if (e.response?.statusCode == 401) {
+      final code = e.response?.statusCode;
+      // A 401 here means the interceptor already attempted refresh and
+      // didn't recover. The refresh path owns the decision to clear the
+      // session on a confirmed AUTH_INVALID_REFRESH; we only handle the
+      // residual case where the stored session has no refresh token at
+      // all, which is unrecoverable by definition.
+      if (e.response?.statusCode == 401 &&
+          _store.session?.refreshToken == null) {
+        debugPrint('[$tag] refreshMe: 401 + no refresh token → clearing session');
         await _store.clear();
         _emit(const AuthSignedOut());
+      } else {
+        debugPrint(
+          '[$tag] refreshMe: transient code=$code type=${e.type.name} — keeping cached',
+        );
       }
-      // Other transient failures: keep the cached user as-is.
-    } catch (_) {
+      // Anything else (transient network, ngrok rotation, dev server down,
+      // 5xx, refresh-failed-but-not-confirmed-invalid) → keep the cached
+      // user visible. Next request will retry.
+    } catch (e) {
+      debugPrint('[$tag] refreshMe: non-Dio $e — keeping cached');
       // ignore; cached user remains visible
     }
   }
 
-  /// Called by AuthTokenStore when a 401 fires. Returns the new access
-  /// token (and persists the rotated session) or null if refresh is not
-  /// possible — in which case the original 401 propagates.
+  /// Called by AuthTokenStore when a 401 fires (or proactively when the
+  /// access token is about to expire). Returns the new access token (and
+  /// persists the rotated session) or null if refresh isn't possible — in
+  /// which case the original 401 propagates.
+  ///
+  /// The session is only cleared when the server explicitly confirms the
+  /// refresh token is dead (HTTP 401 with code `AUTH_INVALID_REFRESH`).
+  /// Transient failures (network, timeout, 5xx, ngrok tunnel rotated, dev
+  /// server restart) leave the session intact so the next attempt can
+  /// recover it.
   Future<String?> _refreshAccessToken() async {
+    const tag = 'smwhr.auth';
     final refreshToken = _store.session?.refreshToken;
-    if (refreshToken == null) return null;
+    if (refreshToken == null) {
+      debugPrint('[$tag] refresh: NO REFRESH TOKEN in store');
+      return null;
+    }
     try {
       final res = await _api.dio.post<Map<String, dynamic>>(
         '/auth/refresh',
@@ -221,13 +256,41 @@ class RealAuthRepository implements AuthRepository {
         expiresAt: _expiresFrom(body['expiresAt']),
       );
       await _store.saveSession(session);
+      debugPrint('[$tag] refresh: rotated, new session saved');
       return session.accessToken;
-    } catch (_) {
-      await _store.clear();
-      _emit(const AuthSignedOut());
+    } on DioException catch (e) {
+      final code = e.response?.statusCode;
+      final body = e.response?.data;
+      final errCode = (body is Map && body['code'] is String)
+          ? body['code'] as String
+          : '(no code)';
+      if (_isConfirmedInvalidRefresh(e)) {
+        debugPrint(
+          '[$tag] refresh: AUTH_INVALID_REFRESH (server confirmed dead) — clearing session',
+        );
+        await _store.clear();
+        _emit(const AuthSignedOut());
+      } else {
+        debugPrint(
+          '[$tag] refresh: transient failure code=$code errCode=$errCode '
+          'type=${e.type.name} msg=${e.message} — keeping session',
+        );
+      }
+      return null;
+    } catch (e) {
+      debugPrint('[$tag] refresh: non-Dio error $e — keeping session');
       return null;
     }
   }
+}
+
+/// Server-confirmed refresh-token death. Any other failure (no response,
+/// timeout, connection refused, 5xx, 401 without our error code) is treated
+/// as transient.
+bool _isConfirmedInvalidRefresh(DioException e) {
+  if (e.response?.statusCode != 401) return false;
+  final body = e.response?.data;
+  return body is Map && body['code'] == 'AUTH_INVALID_REFRESH';
 }
 
 DateTime? _expiresFrom(Object? v) {

@@ -1,5 +1,6 @@
 import 'dart:async';
 
+import '../../../data/local/photo_queue.dart';
 import '../../../data/local/tracking_db.dart';
 import '../../../data/models/quest.dart';
 
@@ -11,6 +12,14 @@ typedef SyncBatchFn = Future<void> Function({
   required String eventId,
   required List<LocusEvent> locusEvents,
   required List<GeolocatorPing> geolocatorPings,
+});
+
+/// Closure that ships a single queued photo to the backend. Same
+/// decoupling rationale as [SyncBatchFn] — TrackingSync stays free of
+/// HTTP plumbing.
+typedef PhotoUploadFn = Future<void> Function({
+  required String eventId,
+  required PendingPhoto photo,
 });
 
 /// Periodic uploader for the dual-track tracker.
@@ -26,9 +35,13 @@ class TrackingSync {
   TrackingSync({
     required TrackingDb db,
     required SyncBatchFn syncFn,
+    PhotoQueue? photoQueue,
+    PhotoUploadFn? photoUploadFn,
     Duration? defaultInterval,
   })  : _db = db,
         _syncFn = syncFn,
+        _photoQueue = photoQueue,
+        _photoUploadFn = photoUploadFn,
         _defaultInterval = defaultInterval ?? const Duration(minutes: 30);
 
   /// Production cadence per locked decision #4. The provider in
@@ -38,6 +51,8 @@ class TrackingSync {
 
   final TrackingDb _db;
   final SyncBatchFn _syncFn;
+  final PhotoQueue? _photoQueue;
+  final PhotoUploadFn? _photoUploadFn;
   final Duration _defaultInterval;
   final Map<String, Timer> _timers = {};
 
@@ -52,9 +67,28 @@ class TrackingSync {
     final effective = interval ?? _defaultInterval;
     _timers[eventId]?.cancel();
     _timers[eventId] = Timer.periodic(effective, (_) {
-      // Fire-and-forget; errors are handled inside syncBatch.
+      // Fire-and-forget; errors are handled inside each call.
       syncBatch(eventId);
+      drainPendingPhoto(eventId);
     });
+  }
+
+  /// Tries to ship the photo queued for [eventId], if any. Cleared on
+  /// success; left in place on failure so the next tick (or
+  /// `finalSync`) retries. No-op when the queue is empty or no
+  /// uploader was wired in (mocks / tests).
+  Future<void> drainPendingPhoto(String eventId) async {
+    final queue = _photoQueue;
+    final upload = _photoUploadFn;
+    if (queue == null || upload == null) return;
+    final pending = queue.pending(eventId);
+    if (pending == null) return;
+    try {
+      await upload(eventId: eventId, photo: pending);
+      await queue.clear(eventId);
+    } catch (_) {
+      // Transient — next tick retries.
+    }
   }
 
   /// Cancels the scheduled timer for [eventId], if any. Does NOT drain.
@@ -95,5 +129,6 @@ class TrackingSync {
   Future<void> finalSync(String eventId) async {
     cancel(eventId);
     await syncBatch(eventId);
+    await drainPendingPhoto(eventId);
   }
 }

@@ -1,4 +1,5 @@
 import 'dart:io';
+import 'dart:math' as math;
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:hive_flutter/hive_flutter.dart';
@@ -444,6 +445,8 @@ class _FakeGeolocatorTracker extends GeolocatorTracker {
   int stopCount = 0;
   String? lastEventId;
   List<LatLng>? lastPolygon;
+  DateTime? lastEventEndsAt;
+  int? lastTargetCount;
 
   @override
   Future<void> start({
@@ -456,6 +459,23 @@ class _FakeGeolocatorTracker extends GeolocatorTracker {
     startCount++;
     lastEventId = eventId;
     lastPolygon = polygon;
+  }
+
+  @override
+  Future<void> startRandomized({
+    required String eventId,
+    required List<LatLng> polygon,
+    required DateTime eventEndsAt,
+    required int targetCount,
+    required void Function(GeolocatorPing) onPing,
+    String Function() idGenerator = _staticId,
+    math.Random? rng,
+  }) async {
+    startCount++;
+    lastEventId = eventId;
+    lastPolygon = polygon;
+    lastEventEndsAt = eventEndsAt;
+    lastTargetCount = targetCount;
   }
 
   @override

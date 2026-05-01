@@ -47,6 +47,8 @@ class User {
     String? bio,
     String? city,
     String? countryCode,
+    String? avatarUrl,
+    bool clearAvatar = false,
     List<String>? interests,
     String? language,
     DateTime? onboardingCompletedAt,
@@ -59,7 +61,7 @@ class User {
       handle: handle ?? this.handle,
       displayName: displayName ?? this.displayName,
       email: email,
-      avatarUrl: avatarUrl,
+      avatarUrl: clearAvatar ? null : (avatarUrl ?? this.avatarUrl),
       bio: bio ?? this.bio,
       city: city ?? this.city,
       countryCode: countryCode ?? this.countryCode,
@@ -100,6 +102,12 @@ class AuthSession {
 
   bool get isExpired =>
       expiresAt != null && DateTime.now().isAfter(expiresAt!);
+
+  /// True when the access token has already expired or is within [window]
+  /// of expiring. Used by [AuthTokenStore] to refresh proactively before a
+  /// request goes out, instead of relying on a 401 round-trip.
+  bool expiresWithin(Duration window) =>
+      expiresAt != null && DateTime.now().add(window).isAfter(expiresAt!);
 
   Map<String, dynamic> toJson() => {
         'userId': userId,

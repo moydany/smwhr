@@ -17,6 +17,7 @@ export class SupabaseService implements OnModuleInit {
 
     this._admin = createClient(url, serviceKey, {
       auth: { autoRefreshToken: false, persistSession: false },
+      global: { headers: { Authorization: `Bearer ${serviceKey}` } },
     });
     this._anon = createClient(url, anonKey, {
       auth: { autoRefreshToken: false, persistSession: false },
@@ -52,5 +53,13 @@ export class SupabaseService implements OnModuleInit {
 
   get anon(): SupabaseClient {
     return this._anon;
+  }
+
+  get storageUrl(): string {
+    return this.config.getOrThrow<string>('supabase.url') + '/storage/v1';
+  }
+
+  get serviceRoleKey(): string {
+    return this.config.getOrThrow<string>('supabase.serviceRoleKey');
   }
 }

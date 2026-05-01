@@ -19,21 +19,40 @@ export class CloseEndedEventsCron {
   @Cron(CronExpression.EVERY_5_MINUTES)
   async run() {
     const cutoff = new Date(Date.now() - 60 * 60 * 1000);
-    const intents = await this.prisma.intent.findMany({
-      where: {
-        event: { endsAt: { lte: cutoff } },
-        NOT: {
-          user: {
-            checkins: {
-              some: { reconciledAt: { not: null } },
-            },
-          },
-        },
-      },
+    // Pull every intent for events that ended ≥1h ago. The
+    // already-reconciled filter happens in a second pass below — doing
+    // it inline as `NOT user.checkins.some.reconciledAt` (the previous
+    // query) excluded any user with ANY past reconciled checkin from
+    // ALL of their pending intents, so a user who'd ever earned a
+    // badge stopped being picked up by this cron entirely. Prisma
+    // can't correlate `intent.eventId === checkin.eventId` on the same
+    // row inside a relation filter, hence the two-step approach.
+    const candidates = await this.prisma.intent.findMany({
+      where: { event: { endsAt: { lte: cutoff } } },
       include: { event: { select: { id: true, slug: true } } },
-      take: 50,
+      take: 200,
     });
+    if (candidates.length === 0) return;
+
+    const reconciled = await this.prisma.checkin.findMany({
+      where: {
+        OR: candidates.map((i) => ({
+          userId: i.userId,
+          eventId: i.eventId,
+        })),
+        reconciledAt: { not: null },
+      },
+      select: { userId: true, eventId: true },
+    });
+    const reconciledKeys = new Set(
+      reconciled.map((c) => `${c.userId}:${c.eventId}`),
+    );
+
+    const intents = candidates
+      .filter((i) => !reconciledKeys.has(`${i.userId}:${i.eventId}`))
+      .slice(0, 50);
     if (intents.length === 0) return;
+
     this.logger.log(`finalizing ${intents.length} pending checkin(s)`);
     for (const i of intents) {
       try {

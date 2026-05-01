@@ -1,3 +1,4 @@
+import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -8,9 +9,14 @@ import '../../../core/theme/app_colors.dart';
 import '../../../core/theme/app_spacing.dart';
 import '../../../core/theme/app_typography.dart';
 import '../../../data/models/event.dart';
+import '../../../data/models/quest.dart';
 import '../../../data/providers.dart';
 import '../../../shared/widgets/smwhr_button.dart';
+import '../../quest/providers/quest_state_provider.dart';
+import '../../quest/widgets/quest_active_pill.dart';
+import '../../quest/widgets/verification_task_row.dart';
 import '../widgets/event_artwork.dart';
+import '../widgets/event_location_map.dart';
 import '../widgets/locked_badge_preview.dart';
 
 /// Pantalla 06 — Event detail. Pulls the event by slug, renders the
@@ -53,19 +59,91 @@ class EventDetailScreen extends ConsumerWidget {
   }
 }
 
-class _EventDetailBody extends ConsumerWidget {
+class _EventDetailBody extends ConsumerStatefulWidget {
   final Event event;
   const _EventDetailBody({required this.event});
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  ConsumerState<_EventDetailBody> createState() => _EventDetailBodyState();
+}
+
+class _EventDetailBodyState extends ConsumerState<_EventDetailBody> {
+  /// Optimistic local copy of the event. Tap → server returns the
+  /// updated row → we replace this. Reverts on error via the
+  /// `_hasIntentProvider` invalidation snapping us back to truth.
+  late Event _local = widget.event;
+  bool _busy = false;
+
+  /// Local "claim is in flight" flag for the manual finalize button.
+  /// Separate from [_busy] so the intent toggle and the claim action
+  /// don't fight over the same spinner.
+  bool _claiming = false;
+
+  /// Has the auto-start path fired this session? `QuestTracker.startQuest`
+  /// is itself idempotent, but we don't want to re-trigger the iOS
+  /// permission sheet on every rebuild. Flips back to `false` if the
+  /// user toggles intent off, so re-RSVP'ing kicks the tracker again.
+  bool _autoStartTried = false;
+
+  @override
+  void didUpdateWidget(covariant _EventDetailBody old) {
+    super.didUpdateWidget(old);
+    if (old.event.id != widget.event.id ||
+        old.event.intentCount != widget.event.intentCount) {
+      _local = widget.event;
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final event = _local;
     final hasIntentAsync = ref.watch(_hasIntentProvider(event.id));
     final hasIntent = hasIntentAsync.maybeWhen(
       data: (v) => v,
       orElse: () => false,
     );
-    final intentCount = ref.watch(_intentCountProvider(event.id)).value ??
-        event.intentCount;
+    final shouldRunQuest = hasIntent && event.isLive;
+    // Quest status keeps polling after the event ends as long as the
+    // user has intent — that's how the "Reclamar insignia" CTA stays
+    // alive in the post-event window when the badge hasn't been issued
+    // yet (verifier was still warming up, or finalize never landed).
+    // Without this, the UI snaps back to the "I'll be there" CTA the
+    // moment the event window closes and the user has no way to claim.
+    final shouldShowQuestStatus =
+        hasIntent && (event.isLive || event.isPast);
+
+    // Auto-start the tracker the first time we see (intent + live).
+    // Idempotent on the QuestTracker side, but we still gate with a
+    // local flag so the iOS "Always" permission sheet only fires once
+    // per visit.
+    if (shouldRunQuest && !_autoStartTried) {
+      _autoStartTried = true;
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!mounted) return;
+        ref
+            .read(questsRepositoryProvider)
+            .startQuest(event.id)
+            .catchError((_) {
+          // Permission denied / event lookup failed — leave the in-
+          // progress banner visible; user can tap into the active
+          // quest screen to retry the permission flow if needed.
+        });
+      });
+    }
+    if (!shouldRunQuest && _autoStartTried) {
+      // User went from "in + live" back to "no intent" or "post" —
+      // re-arm the auto-start so the next live entry triggers it.
+      _autoStartTried = false;
+    }
+
+    final liveStatusAsync = shouldShowQuestStatus
+        ? ref.watch(questStatusProvider(event.id))
+        : null;
+    final liveStatus = liveStatusAsync?.maybeWhen(
+      data: (s) => s,
+      orElse: () => null,
+    );
+    final canClaim = _canClaimNow(liveStatus);
 
     return CustomScrollView(
       physics: const BouncingScrollPhysics(),
@@ -76,58 +154,71 @@ class _EventDetailBody extends ConsumerWidget {
           sliver: SliverList(
             delegate: SliverChildListDelegate([
               const SizedBox(height: AppSpacing.lg),
-              SmwhrButton(
-                label: hasIntent ? "You're in" : "I'll be there",
-                variant: hasIntent
-                    ? SmwhrButtonVariant.dark
-                    : SmwhrButtonVariant.primary,
-                onPressed: () async {
-                  HapticFeedback.mediumImpact();
-                  final repo = ref.read(eventsRepositoryProvider);
-                  if (hasIntent) {
-                    await repo.removeIntent(event.id);
-                  } else {
-                    await repo.setIntent(event.id);
-                  }
-                  ref.invalidate(_hasIntentProvider(event.id));
-                },
-              ),
-              // Start quest CTA — only surfaces inside the event window
-              // for users who've already opted in. Outside the window
-              // (pre / post) the button stays hidden so we don't push
-              // people into a tracker that would just immediately mark
-              // them outside-of-time.
-              if (hasIntent && event.isLive) ...[
-                const SizedBox(height: AppSpacing.sm),
+              if (liveStatus?.badgeId != null)
                 SmwhrButton(
-                  label: 'Start quest',
-                  leading: const Icon(
-                    Icons.bolt_rounded,
-                    size: 20,
-                    color: AppColors.textPrimary,
+                  label: 'Ver tu insignia',
+                  variant: SmwhrButtonVariant.primary,
+                  leading: const Padding(
+                    padding: EdgeInsets.only(left: AppSpacing.md),
+                    child: Icon(Icons.auto_awesome_rounded, size: 20),
                   ),
                   onPressed: () {
                     HapticFeedback.heavyImpact();
-                    context.push(AppRoutes.activeQuest(event.id));
+                    context.push(AppRoutes.reveal(liveStatus!.badgeId!));
                   },
+                )
+              else if (canClaim)
+                SmwhrButton(
+                  label: _claiming ? '…' : 'Reclamar insignia',
+                  variant: SmwhrButtonVariant.primary,
+                  isLoading: _claiming,
+                  leading: const Padding(
+                    padding: EdgeInsets.only(left: AppSpacing.md),
+                    child: Icon(Icons.workspace_premium_rounded, size: 20),
+                  ),
+                  onPressed: _claiming ? null : () => _claimBadge(event.id),
+                )
+              else if (shouldRunQuest)
+                _QuestInProgressBanner(status: liveStatus)
+              else
+                SmwhrButton(
+                  label: _busy
+                      ? '…'
+                      : (hasIntent ? "You're in" : "I'll be there"),
+                  variant: hasIntent
+                      ? SmwhrButtonVariant.dark
+                      : SmwhrButtonVariant.primary,
+                  isLoading: _busy,
+                  onPressed: _busy ? null : () => _toggleIntent(hasIntent),
                 ),
-              ],
               const SizedBox(height: AppSpacing.md),
               _StatsRow(
-                going: intentCount,
+                going: event.intentCount,
                 network: hasIntent ? 12 : 8,
                 verified: 0,
               ),
               const SizedBox(height: AppSpacing.xl),
               _SectionLabel('The quest'),
-              const SizedBox(height: AppSpacing.xs),
-              Text(
-                'Show up. Stay for at least '
-                '${event.dwellMinimumMin} minutes. Capture one moment. '
-                'Earn a collectible proving you were there — verified by '
-                'GPS, device trust, and dwell time.',
-                style: AppTypography.bodyMedium.copyWith(height: 1.5),
+              const SizedBox(height: AppSpacing.sm),
+              _QuestTaskList(
+                liveStatus: liveStatus,
+                onCapturePhoto: shouldRunQuest && (liveStatus?.hasArrived ?? false)
+                    ? () {
+                        HapticFeedback.heavyImpact();
+                        context.push(AppRoutes.camera(event.id));
+                      }
+                    : null,
               ),
+              if ((liveStatus?.photos.isNotEmpty ?? false)) ...[
+                const SizedBox(height: AppSpacing.xl),
+                _SectionLabel('Tus fotos'),
+                const SizedBox(height: AppSpacing.sm),
+                _PhotoGalleryStrip(photos: liveStatus!.photos),
+              ],
+              const SizedBox(height: AppSpacing.xl),
+              _SectionLabel('Where'),
+              const SizedBox(height: AppSpacing.xs),
+              EventLocationMap(event: event),
               const SizedBox(height: AppSpacing.xl),
               _SectionLabel("What you'll earn"),
               const SizedBox(height: AppSpacing.xs),
@@ -141,6 +232,107 @@ class _EventDetailBody extends ConsumerWidget {
         ),
       ],
     );
+  }
+
+  /// True when the user has finished what the verifier needs but the
+  /// badge hasn't been issued yet — the moment the manual "Reclamar
+  /// insignia" CTA should light up. Mirrors the server-side gates
+  /// (`hasArrived` + `presenceRatio >= 0.7`) using the per-task ledger
+  /// the status endpoint surfaces, so we never offer the button when
+  /// finalize would predictably return null. The photo task is *not*
+  /// required — backend scores the photo as bonus points, not a hard
+  /// gate. Returning false also when [liveStatus] is null keeps the
+  /// button hidden during cold-start before the first poll lands.
+  bool _canClaimNow(QuestStatus? liveStatus) {
+    if (liveStatus == null) return false;
+    if (liveStatus.badgeId != null) return false;
+    final tasks = liveStatus.tasks;
+    if (tasks.isEmpty) return false;
+    final arrival = tasks.firstWhere(
+      (t) => t.id == VerificationTaskId.arrival,
+      orElse: () => const VerificationTask(
+        id: VerificationTaskId.arrival,
+        status: VerificationTaskStatus.pending,
+      ),
+    );
+    final spot = tasks.firstWhere(
+      (t) => t.id == VerificationTaskId.spotChecks,
+      orElse: () => const VerificationTask(
+        id: VerificationTaskId.spotChecks,
+        status: VerificationTaskStatus.pending,
+      ),
+    );
+    if (!arrival.isDone) return false;
+    final n = spot.progressNumerator ?? 0;
+    final m = spot.progressDenominator ?? 0;
+    if (m == 0) return spot.isDone;
+    return (n / m) >= 0.7;
+  }
+
+  Future<void> _claimBadge(String eventId) async {
+    HapticFeedback.heavyImpact();
+    setState(() => _claiming = true);
+    try {
+      final repo = ref.read(questsRepositoryProvider);
+      final badgeId = await repo.finalizeQuest(eventId);
+      if (!mounted) return;
+      if (badgeId != null) {
+        // Trigger an immediate status refresh so the next rebuild swaps
+        // the claim CTA for "Ver tu insignia". The poll loop would pick
+        // it up within 5s anyway, but invalidating here keeps the
+        // transition snappy.
+        ref.invalidate(questStatusProvider(eventId));
+        context.push(AppRoutes.reveal(badgeId));
+      } else {
+        ScaffoldMessenger.maybeOf(context)?.showSnackBar(
+          SnackBar(
+            backgroundColor: AppColors.surfaceElevated,
+            duration: const Duration(seconds: 6),
+            content: Text(
+              'Aún no llegamos al umbral de verificación. Sigue capturando o intenta de nuevo en unos minutos.',
+              style: AppTypography.bodySmall.copyWith(
+                color: AppColors.textPrimary,
+              ),
+            ),
+          ),
+        );
+      }
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.maybeOf(context)?.showSnackBar(
+        SnackBar(
+          backgroundColor: AppColors.errorBackground,
+          duration: const Duration(seconds: 6),
+          content: Text(
+            'No se pudo emitir tu insignia: $e',
+            style: AppTypography.bodySmall.copyWith(color: AppColors.error),
+          ),
+        ),
+      );
+    } finally {
+      if (mounted) setState(() => _claiming = false);
+    }
+  }
+
+  Future<void> _toggleIntent(bool hasIntent) async {
+    HapticFeedback.mediumImpact();
+    setState(() => _busy = true);
+    try {
+      final repo = ref.read(eventsRepositoryProvider);
+      final updated = hasIntent
+          ? await repo.removeIntent(_local.id)
+          : await repo.setIntent(_local.id);
+      if (!mounted) return;
+      setState(() => _local = updated);
+      ref.invalidate(_hasIntentProvider(_local.id));
+    } catch (_) {
+      // Snap back to server truth — invalidating refetches the
+      // provider, which in turn cancels the optimistic flip.
+      if (!mounted) return;
+      ref.invalidate(_hasIntentProvider(_local.id));
+    } finally {
+      if (mounted) setState(() => _busy = false);
+    }
   }
 }
 
@@ -220,7 +412,7 @@ class _HeroArt extends StatelessWidget {
                 ),
               const SizedBox(height: 2),
               Text(
-                _titleLine(event.title),
+                event.title,
                 style: AppTypography.displayHero.copyWith(
                   fontSize: 38,
                   letterSpacing: -1.2,
@@ -241,15 +433,6 @@ class _HeroArt extends StatelessWidget {
         ),
       ],
     );
-  }
-
-  /// Splits "BTS World Tour · Noche 1" → "Noche 1" so the hero shows
-  /// the most distinctive line. If there's no separator, returns the
-  /// whole title.
-  static String _titleLine(String title) {
-    final i = title.indexOf('·');
-    if (i < 0 || i == title.length - 1) return title;
-    return title.substring(i + 1).trim();
   }
 
   static String _formatLongDate(DateTime d) {
@@ -345,6 +528,255 @@ class _Dot extends StatelessWidget {
       );
 }
 
+/// Verification checklist on the event detail page. Two modes:
+///
+///   - **Preview** (`liveStatus == null`) — quest hasn't started yet
+///     (event is pre, or the user hasn't RSVP'd). Every row shows the
+///     pending state with a description of what unlocks it. This is
+///     the "promise" we make to the user before they commit.
+///   - **Live** (`liveStatus != null`) — the tracker is running. Each
+///     row reflects the real state from [QuestStatus] (pending /
+///     active / done) including dwell counter and spot-check N/M.
+///
+/// The same widget renders both so the visual hierarchy stays
+/// identical between "what you'll do" and "what you've done".
+class _QuestTaskList extends StatelessWidget {
+  final QuestStatus? liveStatus;
+
+  /// Tap handler for the photo row. Non-null only when the quest is
+  /// running AND the user has arrived at the venue — that's the
+  /// moment the camera unlocks. Stays non-null after the first
+  /// capture so the user can take additional photos during the show.
+  final VoidCallback? onCapturePhoto;
+
+  const _QuestTaskList({this.liveStatus, this.onCapturePhoto});
+
+  @override
+  Widget build(BuildContext context) {
+    final tasks = liveStatus?.tasks;
+
+    VerificationTask? taskFor(VerificationTaskId id) =>
+        tasks?.firstWhere(
+          (t) => t.id == id,
+          orElse: () => VerificationTask(id: id, status: VerificationTaskStatus.pending),
+        );
+
+    // Verification model (R0.1+):
+    //   - **Llegada** confirms the user reached the venue.
+    //   - **Spot-checks N/M** is the presence signal — a percentage of
+    //     random GPS reads inside the polygon. Spoof-resistant by
+    //     unpredictable timing; tolerant of brief steps outside (a
+    //     bathroom break doesn't blow up a continuous-dwell counter
+    //     anymore, because we don't gate on continuous dwell).
+    //   - **Foto** anchors the badge to a real captured moment.
+    //
+    // Server-side `dwellMinutes` is still computed as a soft input to
+    // the badge scoring, but we don't surface it as a user-facing task
+    // — telling someone they need to "stay 5 min continuous" forces
+    // them to white-knuckle the time when the real verification is
+    // about presence percentage, not stopwatch time.
+    final arrival = taskFor(VerificationTaskId.arrival);
+    final spot = taskFor(VerificationTaskId.spotChecks);
+    final photo = taskFor(VerificationTaskId.photo);
+
+    final rows = <Widget>[
+      VerificationTaskRow(
+        label: 'Llega al venue',
+        status: arrival?.status ?? VerificationTaskStatus.pending,
+        hint: arrival?.isDone == true ? null : 'Confirmamos tu llegada',
+      ),
+      VerificationTaskRow(
+        label: 'Verificaciones aleatorias',
+        status: spot?.status ?? VerificationTaskStatus.pending,
+        hint: spot?.isDone == true
+            ? 'Tu presencia quedó verificada'
+            : 'Te verificamos en momentos aleatorios durante el evento',
+        trailing: spot?.progressDenominator == null
+            ? null
+            : '${spot!.progressNumerator ?? 0}/${spot.progressDenominator}',
+      ),
+      _PhotoTaskRow(
+        status: photo?.status ?? VerificationTaskStatus.pending,
+        hint: photo?.isDone == true
+            ? 'Tap para capturar otra'
+            : 'Tómala cuando quieras durante el show',
+        onTap: onCapturePhoto,
+      ),
+    ];
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        for (var i = 0; i < rows.length; i++) ...[
+          rows[i],
+          if (i != rows.length - 1)
+            const Divider(height: 1, color: AppColors.borderSoft),
+        ],
+      ],
+    );
+  }
+}
+
+/// Horizontal strip of photo thumbnails captured during the event.
+/// Surfaces under the quest checklist as the user accumulates
+/// captures — instant visual confirmation that the shutter worked,
+/// even before the upload drainer finishes shipping the file.
+///
+/// First photo (chronologically) gets a magenta border to mark it as
+/// the badge anchor. The rest are bonus moments.
+class _PhotoGalleryStrip extends StatelessWidget {
+  final List<EventPhoto> photos;
+  const _PhotoGalleryStrip({required this.photos});
+
+  @override
+  Widget build(BuildContext context) {
+    return SizedBox(
+      height: 88,
+      child: ListView.separated(
+        scrollDirection: Axis.horizontal,
+        padding: EdgeInsets.zero,
+        physics: const BouncingScrollPhysics(),
+        itemCount: photos.length,
+        separatorBuilder: (_, _) => const SizedBox(width: AppSpacing.xs),
+        itemBuilder: (_, i) {
+          final p = photos[i];
+          final isAnchor = i == 0;
+          return Container(
+            width: 72,
+            decoration: BoxDecoration(
+              borderRadius: BorderRadius.circular(AppSpacing.radiusBadge),
+              border: Border.all(
+                color: isAnchor ? AppColors.accent : AppColors.borderSoft,
+                width: isAnchor ? 1.5 : 1,
+              ),
+              color: AppColors.surfaceElevated,
+            ),
+            clipBehavior: Clip.antiAlias,
+            child: p.publicUrl == null || p.publicUrl!.isEmpty
+                ? const Center(
+                    child: Icon(
+                      Icons.image_outlined,
+                      size: 22,
+                      color: AppColors.textTertiary,
+                    ),
+                  )
+                : CachedNetworkImage(
+                    imageUrl: p.publicUrl!,
+                    fit: BoxFit.cover,
+                    placeholder: (_, _) => const SizedBox.shrink(),
+                    errorWidget: (_, _, _) => const Icon(
+                      Icons.broken_image_outlined,
+                      size: 18,
+                      color: AppColors.textTertiary,
+                    ),
+                  ),
+          );
+        },
+      ),
+    );
+  }
+}
+
+/// Photo row variant — wraps [VerificationTaskRow] with a camera-icon
+/// affordance on the right and makes the whole row tappable when the
+/// camera is reachable (user has arrived at the venue).
+///
+/// After the first capture we keep the row tappable so the user can
+/// add additional photos during the show — the badge anchors to the
+/// FIRST verified photo (server-side), so subsequent captures don't
+/// change verification, they just enrich the user's record of the
+/// event.
+class _PhotoTaskRow extends StatelessWidget {
+  final VerificationTaskStatus status;
+  final String? hint;
+  final VoidCallback? onTap;
+
+  const _PhotoTaskRow({
+    required this.status,
+    this.hint,
+    this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final tappable = onTap != null;
+    final row = VerificationTaskRow(
+      label: 'Foto del momento',
+      status: status,
+      hint: hint,
+      trailing: tappable ? '' : null,
+      trailingWidget: tappable
+          ? const Icon(
+              Icons.camera_alt_rounded,
+              size: 22,
+              color: AppColors.accent,
+            )
+          : null,
+    );
+    if (!tappable) return row;
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(AppSpacing.radiusBadge),
+        child: row,
+      ),
+    );
+  }
+}
+
+/// Status banner shown in place of "I'll be there" while the tracker
+/// is running. Pure visual indicator — pulsing accent dot + short
+/// status line. NOT tappable: the camera + task progress live
+/// directly on this screen now, so there's nowhere to navigate to.
+class _QuestInProgressBanner extends StatelessWidget {
+  final QuestStatus? status;
+
+  const _QuestInProgressBanner({required this.status});
+
+  @override
+  Widget build(BuildContext context) {
+    final subtitle = _subtitleFor(status);
+    return Container(
+      padding: const EdgeInsets.symmetric(
+        horizontal: AppSpacing.md,
+        vertical: AppSpacing.md,
+      ),
+      decoration: BoxDecoration(
+        color: AppColors.surfaceElevated,
+        borderRadius: BorderRadius.circular(AppSpacing.radiusButton),
+        border: Border.all(
+          color: AppColors.accent.withValues(alpha: 0.32),
+          width: 1,
+        ),
+      ),
+      child: Row(
+        children: [
+          const QuestActivePill(),
+          const SizedBox(width: AppSpacing.sm),
+          Expanded(
+            child: Text(
+              subtitle,
+              style: AppTypography.bodySmall.copyWith(
+                color: AppColors.textSecondary,
+              ),
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  static String _subtitleFor(QuestStatus? s) {
+    if (s == null) return 'Sincronizando…';
+    if (!s.hasArrived) return 'Esperando tu llegada al venue';
+    if (s.checks.photoCapture) return 'Tu momento ya quedó capturado';
+    return 'Capturando tu momento';
+  }
+}
+
 class _SectionLabel extends StatelessWidget {
   final String text;
   const _SectionLabel(this.text);
@@ -416,14 +848,16 @@ final _eventBySlugProvider =
   return repo.getEventBySlug(slug);
 });
 
+/// Whether the user has RSVP'd to this event. AutoDispose so leaving
+/// the screen frees the cache; refetched on every detail-screen open
+/// (cheap — single GET) plus on demand after `setIntent` /
+/// `removeIntent` via `ref.invalidate`. Intent COUNT used to live in
+/// a polling stream here — the cost (overlapping streams + every-30s
+/// `/events/by-id` fanout) wasn't worth the live-update; we now read
+/// the count from the [Event] model returned by `setIntent` /
+/// `removeIntent` and a pull-to-refresh on the home feed.
 final _hasIntentProvider =
     FutureProvider.autoDispose.family<bool, String>((ref, eventId) async {
   final repo = ref.watch(eventsRepositoryProvider);
   return repo.hasIntent(eventId);
-});
-
-final _intentCountProvider =
-    StreamProvider.autoDispose.family<int, String>((ref, eventId) {
-  final repo = ref.watch(eventsRepositoryProvider);
-  return repo.watchIntentCount(eventId);
 });

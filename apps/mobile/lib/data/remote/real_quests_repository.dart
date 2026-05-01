@@ -3,9 +3,13 @@ import 'dart:io';
 
 import 'package:dio/dio.dart';
 
+import '../../features/quest/services/local_quest_status.dart';
 import '../../features/quest/services/quest_tracker.dart';
+import '../local/photo_queue.dart';
+import '../local/tracking_db.dart';
 import '../models/photo_upload.dart';
 import '../models/quest.dart';
+import '../repositories/events_repository.dart';
 import '../repositories/quests_repository.dart';
 import 'api_client.dart';
 import 'mappers.dart';
@@ -19,10 +23,19 @@ import 'quest_payloads.dart';
 /// keeps calling `repo.startQuest(eventId)` without knowing whether
 /// we're in mock or real mode.
 class RealQuestsRepository implements QuestsRepository {
-  RealQuestsRepository(this._api, {required this.questTracker});
+  RealQuestsRepository(
+    this._api, {
+    required this.questTracker,
+    required this.trackingDb,
+    required this.photoQueue,
+    required this.eventsRepository,
+  });
 
   final ApiClient _api;
   final QuestTracker questTracker;
+  final TrackingDb trackingDb;
+  final PhotoQueue photoQueue;
+  final EventsRepository eventsRepository;
 
   @override
   Future<QuestStatus> getQuestStatus(String eventId) async {
@@ -35,15 +48,52 @@ class RealQuestsRepository implements QuestsRepository {
   @override
   Stream<QuestStatus> watchQuestStatus(String eventId) async* {
     while (true) {
+      QuestStatus? next;
       try {
         final res = await _api.dio.get<Map<String, dynamic>>(
           '/quests/$eventId/status',
         );
-        yield questStatusFromJson(res.data!);
+        next = questStatusFromJson(res.data!);
       } catch (_) {
-        // swallow transient failures
+        // Network is down or backend unreachable. Fall back to a
+        // locally-derived status so the active-quest checklist keeps
+        // updating from the trackers + photo queue. The mobile model's
+        // `tasks` getter falls through to client-side derivation when
+        // `serverTasks` is empty, which is exactly what the local
+        // builder produces.
+        next = await _localStatusOrNull(eventId);
+      }
+      if (next != null) {
+        // Local-photo overlay: when a photo is queued for upload, force
+        // `photoCapture = true` so the active-quest checklist + the
+        // model's `tasks` getter render the photo task as captured-but-
+        // pending instead of flickering back to "—" the moment the
+        // first server response after re-connecting lands but before
+        // the upload drainer runs.
+        if (photoQueue.pending(eventId) != null &&
+            !next.checks.photoCapture) {
+          next = next.copyWith(
+            checks: next.checks.copyWith(photoCapture: true),
+          );
+        }
+        yield next;
       }
       await Future<void>.delayed(const Duration(seconds: 5));
+    }
+  }
+
+  Future<QuestStatus?> _localStatusOrNull(String eventId) async {
+    try {
+      final event = await eventsRepository.getEventById(eventId);
+      if (event == null) return null;
+      return await buildLocalQuestStatus(
+        eventId: eventId,
+        event: event,
+        trackingDb: trackingDb,
+        photoQueue: photoQueue,
+      );
+    } catch (_) {
+      return null;
     }
   }
 

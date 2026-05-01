@@ -51,11 +51,19 @@ class PhotoUploadResult {
   final bool isWithinTimeWindow;
   final bool isInsideGeofence;
 
+  /// True when this upload was NOT the first photo for the event —
+  /// the badge already anchored to a previous photo, so this one is
+  /// part of the user's record of the moment without changing
+  /// verification. The camera screen uses this to skip the reveal
+  /// flow on subsequent captures.
+  final bool isAdditionalPhoto;
+
   const PhotoUploadResult({
     required this.photoId,
     required this.isExifValid,
     required this.isWithinTimeWindow,
     required this.isInsideGeofence,
+    this.isAdditionalPhoto = false,
   });
 
   /// All three checks passed. The badge issued at finalize-time will
@@ -74,6 +82,7 @@ class PhotoUploadResult {
       isExifValid: json['isExifValid'] as bool? ?? false,
       isWithinTimeWindow: json['isWithinTimeWindow'] as bool? ?? false,
       isInsideGeofence: json['isInsideGeofence'] as bool? ?? false,
+      isAdditionalPhoto: json['isAdditionalPhoto'] as bool? ?? false,
     );
   }
 }

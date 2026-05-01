@@ -3,6 +3,7 @@ import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
+import '../../../core/router/app_router.dart';
 import '../../../core/theme/app_colors.dart';
 import '../../../core/theme/app_spacing.dart';
 import '../../../core/theme/app_typography.dart';
@@ -26,7 +27,7 @@ class ProfileScreen extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final userAsync = handle == null
-        ? ref.watch(_meProvider)
+        ? ref.watch(meProvider)
         : ref.watch(_userByHandleProvider(handle!));
     final badgesAsync = ref.watch(
       _userBadgesProvider(handle ?? '@me'),
@@ -51,7 +52,11 @@ class ProfileScreen extends ConsumerWidget {
             if (user == null) {
               return const Center(child: Text('User not found'));
             }
-            return _Body(user: user, badgesAsync: badgesAsync);
+            return _Body(
+              user: user,
+              badgesAsync: badgesAsync,
+              isMe: handle == null,
+            );
           },
         ),
       ),
@@ -62,10 +67,35 @@ class ProfileScreen extends ConsumerWidget {
 class _Body extends StatelessWidget {
   final User user;
   final AsyncValue<List<Badge>> badgesAsync;
-  const _Body({required this.user, required this.badgesAsync});
+  final bool isMe;
+  const _Body({
+    required this.user,
+    required this.badgesAsync,
+    required this.isMe,
+  });
 
   @override
   Widget build(BuildContext context) {
+    // Stats: badges are the source of truth (each verified quest produces a
+    // badge). When the badges list has loaded, derive locally — the
+    // server-side counters can lag on R0.1. Fall back to user.* otherwise so
+    // the card never renders empty during the badges fetch.
+    final badges = badgesAsync.value;
+    final quests = badges?.length ?? user.questsCount;
+    final venues = badges != null
+        ? badges
+            .map((b) => '${b.venueName.toLowerCase()}|${b.city.toLowerCase()}')
+            .toSet()
+            .length
+        : user.venuesCount;
+    final artists = badges != null
+        ? badges
+            .map((b) => b.artistName?.toLowerCase())
+            .whereType<String>()
+            .toSet()
+            .length
+        : user.artistsCount;
+
     return CustomScrollView(
       physics: const BouncingScrollPhysics(),
       slivers: [
@@ -74,14 +104,17 @@ class _Body extends StatelessWidget {
             padding: const EdgeInsets.symmetric(horizontal: AppSpacing.lg),
             child: Column(
               children: [
-                _TopBar(),
+                _TopBar(isMe: isMe),
                 const SizedBox(height: AppSpacing.lg),
                 ProfileTop(user: user),
                 const SizedBox(height: AppSpacing.lg),
                 ProfileStats(
-                  quests: user.questsCount,
-                  venues: user.venuesCount,
-                  artists: user.artistsCount,
+                  quests: quests,
+                  venues: venues,
+                  artists: artists,
+                  onQuestsTap: isMe && quests > 0
+                      ? () => context.push(AppRoutes.questHistory)
+                      : null,
                 ),
                 const SizedBox(height: AppSpacing.lg),
                 _Tabs(badgeCount: badgesAsync.value?.length ?? 0),
@@ -142,9 +175,12 @@ class _Body extends StatelessWidget {
   }
 }
 
-class _TopBar extends StatelessWidget {
+class _TopBar extends ConsumerWidget {
+  final bool isMe;
+  const _TopBar({required this.isMe});
+
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
     return Row(
       children: [
         if (GoRouter.of(context).canPop())
@@ -167,6 +203,47 @@ class _TopBar extends StatelessWidget {
             ),
           ),
         const Spacer(),
+        if (isMe) ...[
+          SizedBox(
+            width: 40,
+            height: 40,
+            child: Material(
+              color: Colors.transparent,
+              child: InkWell(
+                borderRadius: BorderRadius.circular(20),
+                onTap: () {
+                  HapticFeedback.lightImpact();
+                  context.push(AppRoutes.profileEdit);
+                },
+                child: const Icon(
+                  Icons.edit_outlined,
+                  size: 20,
+                  color: AppColors.textSecondary,
+                ),
+              ),
+            ),
+          ),
+          const SizedBox(width: AppSpacing.xxs),
+          SizedBox(
+            width: 40,
+            height: 40,
+            child: Material(
+              color: Colors.transparent,
+              child: InkWell(
+                borderRadius: BorderRadius.circular(20),
+                onTap: () async {
+                  HapticFeedback.lightImpact();
+                  await ref.read(authRepositoryProvider).signOut();
+                },
+                child: const Icon(
+                  Icons.logout_rounded,
+                  size: 20,
+                  color: AppColors.textSecondary,
+                ),
+              ),
+            ),
+          ),
+        ],
       ],
     );
   }
@@ -247,11 +324,6 @@ class _EmptyCollection extends StatelessWidget {
 }
 
 // ── Providers ──────────────────────────────────────────────────────
-
-final _meProvider = FutureProvider.autoDispose<User?>((ref) async {
-  final repo = ref.watch(usersRepositoryProvider);
-  return repo.getMe();
-});
 
 final _userByHandleProvider =
     FutureProvider.autoDispose.family<User?, String>((ref, handle) async {
