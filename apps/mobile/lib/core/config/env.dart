@@ -14,13 +14,13 @@ class Env {
   static const bool useMocks =
       bool.fromEnvironment('USE_MOCKS', defaultValue: false);
 
-  /// Base URL for the NestJS API. Pointing at the Railway production
-  /// service so TestFlight builds work without an active local
-  /// tunnel. Replace with `api.smwhr.dev` (or whatever the eventual
-  /// pretty domain is) once DNS is set up.
+  /// Base URL for the NestJS API. Static ngrok tunnel that fronts the
+  /// founder's local Railway image during the soft-launch window.
+  /// Swap for `api-production-7e5a.up.railway.app` (Railway direct)
+  /// or the eventual pretty domain when DNS is set up.
   static const String apiBaseUrl = String.fromEnvironment(
     'API_BASE_URL',
-    defaultValue: 'https://api-production-7e5a.up.railway.app',
+    defaultValue: 'https://crappie-patient-boxer.ngrok-free.app',
   );
 
   /// Supabase project URL. Unused while [useMocks] is true.

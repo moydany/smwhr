@@ -36,6 +36,14 @@
 	<string>smwhr usa datos de movimiento para ahorrar batería durante quests.</string>
 	<key>NSPhotoLibraryAddUsageDescription</key>
 	<string>smwhr guarda tu insignia compuesta en la galería cuando le das a "Save to camera roll".</string>
+	<key>NSPhotoLibraryUsageDescription</key>
+	<string>smwhr accede a tu galería para guardar tu insignia del evento.</string>
+	<key>NSBluetoothAlwaysUsageDescription</key>
+	<string>smwhr usa Bluetooth para detectar proximidad en el venue durante quests activas.</string>
+	<key>NSBluetoothPeripheralUsageDescription</key>
+	<string>smwhr usa Bluetooth para detectar proximidad en el venue durante quests activas.</string>
+	<key>NSNearbyInteractionUsageDescription</key>
+	<string>smwhr usa Nearby Interaction para verificar tu presencia en el evento.</string>
 	<key>UIApplicationSceneManifest</key>
 	<dict>
 		<key>UIApplicationSupportsMultipleScenes</key>
@@ -59,6 +67,11 @@
 	</dict>
 	<key>UIApplicationSupportsIndirectInputEvents</key>
 	<true/>
+	<key>BGTaskSchedulerPermittedIdentifiers</key>
+	<array>
+		<string>dev.orbitm.smwhr.sync</string>
+		<string>dev.orbitm.smwhr.refresh</string>
+	</array>
 	<key>UIBackgroundModes</key>
 	<array>
 		<string>location</string>

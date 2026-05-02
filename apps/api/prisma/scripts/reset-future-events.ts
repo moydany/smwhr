@@ -27,10 +27,12 @@ const prisma = new PrismaClient();
 
 // 19°25'33.5"N 99°09'49.8"W — coordinates supplied by founder for the
 // ZHU show. Decimal: 19.4259722, -99.1638333. Roma Norte / Cuauhtémoc
-// edge of CDMX. Default `delta` (~165m square) fits a club-scale venue.
+// edge of CDMX. Surprise street show — bumped delta to ~330m so the
+// geofence covers a few blocks of foot traffic, not a single club door.
 const ZHU_VENUE: VenueLoc = {
   lat: 19 + 25 / 60 + 33.5 / 3600,
   lng: -(99 + 9 / 60 + 49.8 / 3600),
+  delta: 0.003,
 };
 
 // delta 0.003 (~330 m) — generous to cover GPS uncertainty at unfamiliar venues.
@@ -47,9 +49,15 @@ const CATALOG: FutureEventInput[] = [
     city: 'Ciudad de México',
     country: 'MX',
     category: 'music',
-    startsAt: new Date('2026-05-01T17:00:00-06:00'),
-    endsAt: new Date('2026-05-01T19:00:00-06:00'),
-    dwellMin: 30,
+    // Wide window (16:00–22:00) on purpose: surprise street show, no
+    // announced start. Pairs with the 5-min geolocator cadence so the
+    // shadow tracker fires ~72 location checks across the window
+    // instead of ~24 — far more chances to land an in-geofence ping.
+    startsAt: new Date('2026-05-01T16:00:00-06:00'),
+    endsAt: new Date('2026-05-01T22:00:00-06:00'),
+    // 10-min dwell (vs 30) — for a passing street show, requiring half
+    // an hour rules out anyone who only catches the back half of the set.
+    dwellMin: 10,
     description:
       'Show gratis sorpresa en la calle. ZHU bajando a Juárez sin aviso. Sin tickets, sin filas — solo presencia.',
     heroColor: '#FF2D95',
